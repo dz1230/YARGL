@@ -1,3 +1,7 @@
+use sdl2::rect::Rect;
+
+use crate::element::{TextElement, Background, Element};
+
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -24,5 +28,23 @@ impl Window {
         Window {
             sdl_canvas: canvas,
         }
+    }
+}
+
+trait Drawable {
+    fn draw(&self, window: &mut Window);
+}
+
+impl Drawable for dyn Background {
+    fn draw(&self, window: &mut Window) {
+        window.sdl_canvas.set_draw_color(self.get_background_color());
+        window.sdl_canvas.fill_rect(Rect::new(self.get_x(), self.get_y(), self.get_width(), self.get_height())).unwrap();
+    }
+}
+
+impl Drawable for dyn TextElement {
+    fn draw(&self, window: &mut Window) {
+        window.sdl_canvas.set_draw_color(self.get_font_color());
+        // TODO render text to texture
     }
 }
