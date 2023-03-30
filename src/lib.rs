@@ -1,14 +1,32 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub mod util;
+pub mod event;
+pub mod font;
+pub mod element;
+pub mod window;
+pub mod context;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::{context::Context, event::EventReturnCode, window::WindowCreationOptions};
+
+    //use super::*;
 
     #[test]
     fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        let mut ctx = Context::new();
+        let _window = ctx.create_window(&WindowCreationOptions {
+            title: "Test".to_string(),
+            width: 800,
+            height: 600,
+        });
+        loop {
+            match ctx.poll_events() {
+                EventReturnCode::Continue => {},
+                EventReturnCode::Cancel => {},
+                EventReturnCode::Quit => {
+                    break
+                }
+            }
+        }
     }
 }
