@@ -1,7 +1,6 @@
-use sdl2::rect::Rect;
+use sdl2::{rect::Rect, VideoSubsystem};
 
-use crate::element::{TextElement, Background, Element};
-
+use crate::element::{TextElement, Background};
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -14,8 +13,7 @@ pub struct Window {
 }
 
 impl Window {
-    pub fn new(sdl: &sdl2::Sdl, options: &WindowCreationOptions) -> Window {
-        let video_subsystem = sdl.video().unwrap();
+    pub fn new(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions) -> Window {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -45,6 +43,8 @@ impl Drawable for dyn Background {
 impl Drawable for dyn TextElement {
     fn draw(&self, window: &mut Window) {
         window.sdl_canvas.set_draw_color(self.get_font_color());
+        
+        
         // TODO render text to texture
     }
 }
