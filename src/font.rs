@@ -71,8 +71,15 @@ pub struct Font<'a> {
     pub used_index: u32,
 }
 
-// TODO figure out how to tell the borrow checker that the lifetime of the Font is the same as the lifetime of the Face
 impl<'a> Font<'a> {
+    fn load_faces(&mut self, min: u32, max: u32) -> HashMap<u32, ttf_parser::Face<'_>> {
+        let mut faces = HashMap::new();
+        for index in min..max {
+            faces.insert(index, ttf_parser::Face::parse(&self.data, index).unwrap());
+        }
+        faces
+    }
+
     pub fn new(file: & String, min_index: Option<u32>, max_index: Option<u32>) -> Font<'a> {
         let mut min = min_index.unwrap_or(0);
         let mut max = max_index.unwrap_or(1);
@@ -86,10 +93,7 @@ impl<'a> Font<'a> {
             faces: HashMap::new(),
             used_index: min,
         };
-        for index in min..max {
-            let face = ttf_parser::Face::parse(&font.data, index).unwrap();
-            font.faces.insert(index, face);
-        }
+        font.load_faces(min, max);
         font
     }
 
