@@ -1,11 +1,10 @@
-use std::rc::Rc;
+use std::{ptr::eq, rc::Rc};
 
 use crate::element::{Background, Element, Node, TextElement};
 
 pub struct HTMLElement {
     parent: Option<Rc<dyn Node>>,
     children: Vec<Rc<dyn Node>>,
-
 }
 
 impl Node for HTMLElement {
@@ -30,6 +29,6 @@ impl Node for HTMLElement {
     }
 
     fn remove_child(&mut self, child: Rc<dyn Node>) {
-        self.children.retain(|c| c != &child);
+        self.children.retain(|c| !eq(c, &child));
     }
 }
