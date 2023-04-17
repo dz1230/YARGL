@@ -4,13 +4,20 @@ use std::rc::Rc;
 use crate::font::Font;
 use crate::event::{Event, EventReceiver, EventReturnCode};
 
+/// A node in a tree.
 pub trait Node {
+    /// Returns the parent node of this node, or [None] on a root node.
     fn get_parent(&self) -> Option<Rc<dyn Node>>;
+    /// Returns the child nodes of this node.
     fn get_children(&self) -> Vec<Rc<dyn Node>>;
 
+    /// Sets the parent node of this node.
     fn set_parent(&mut self, parent: Option<Rc<dyn Node>>);
+    /// Sets all child nodes of this node. Removes all previous children.
     fn set_children(&mut self, children: Vec<Rc<dyn Node>>);
+    /// Adds a child node to this node.
     fn add_child(&mut self, child: Rc<dyn Node>);
+    /// Removes a child node from this node.
     fn remove_child(&mut self, child: Rc<dyn Node>);
 }
 

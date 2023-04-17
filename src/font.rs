@@ -80,7 +80,7 @@ impl<'a> Font<'a> {
         faces
     }
 
-    pub fn new(file: & String, min_index: Option<u32>, max_index: Option<u32>) -> Font<'a> {
+    pub fn new(file: &str, min_index: Option<u32>, max_index: Option<u32>) -> Font<'a> {
         let mut min = min_index.unwrap_or(0);
         let mut max = max_index.unwrap_or(1);
         if min > max {
