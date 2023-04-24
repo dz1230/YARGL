@@ -89,3 +89,25 @@ pub struct Style {
     pub selectors: Vec<Selector>,
     pub properties: Vec<Property>,
 }
+
+pub fn parse_css(css: &str) {
+    let mut parser_input = cssparser::ParserInput::new(css);
+    let mut parser = cssparser::Parser::new(&mut parser_input);
+
+    loop {
+        match parser.next() {
+            Ok(token) => {
+                match token {
+                    cssparser::Token::Ident(ident) => {
+                        
+                    },
+                    cssparser::Token::Function(name) => {
+                        
+                    },
+                    _ => {}
+                }
+            },
+            Err(_) => break
+        }
+    }
+}
