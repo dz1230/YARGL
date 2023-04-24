@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 
 pub enum Unit {
     Px,
@@ -24,66 +26,66 @@ impl Selector {
     }
 }
 
+pub struct CssParseError;
+
+// FUCK RUST, why do I have to do this?
+pub struct CssColor {
+    pub sdl_color: sdl2::pixels::Color,
+}
+
+impl FromStr for CssColor {
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut chars = s.chars();
+        if chars.next() == Some('#') {
+            let mut color: Vec<u8> = Vec::new();
+            for _ in 0..3 {
+                let mut hex: String = String::new();
+                for _ in 0..2 {
+                    match chars.next() {
+                        Some(ch) => hex.push(ch),
+                        None => return Err(CssParseError {})
+                    }
+                }
+                match u8::from_str_radix(&hex, 16) {
+                    Ok(num) => color.push(num),
+                    Err(_) => return Err(CssParseError {})
+                }
+            }
+            Ok(CssColor { sdl_color: sdl2::pixels::Color::RGB(color[0], color[1], color[2]) })
+        } else {
+            Err(CssParseError {})
+        }
+    }
+    type Err = CssParseError;
+}
+
 pub struct Property {
     pub name: String,
     pub value: String,
 }
 
 impl Property {
-    pub fn get_number(&self) -> Option<f32> {
-        let mut val = String::new();
-        for c in self.value.as_str().chars() {
-            if c < '0' || c > '9' && c != '.' {
-                if val.len() == 0 {
-                    continue;
-                }
-                break;
-            } else {
-                val.push(c);
+    pub fn get_value<T>(&self) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+        for unit in vec!["px", "pt", "em", "%", "vw", "vh"] {
+            if self.value.ends_with(unit) {
+                let val = self.value[0..self.value.len() - unit.len()].parse::<T>().ok();
+                let unit = match unit {
+                    "px" => Some(Unit::Px),
+                    "pt" => Some(Unit::Pt),
+                    "em" => Some(Unit::Em),
+                    "%" => Some(Unit::Percent),
+                    "vw" => Some(Unit::Vw),
+                    "vh" => Some(Unit::Vh),
+                    _ => None,
+                };
+                return (val, unit);
             }
         }
-        val.as_str().parse::<f32>().ok()
-    }
-    pub fn get_unit(&self) -> Option<Unit> {
-        let mut unit = String::new();
-        for c in self.value.as_str().chars().rev() {
-            if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && c != '%' {
-                if unit.len() == 0 {
-                    continue;
-                }
-                break;
-            } else {
-                unit.push(c);
-            }
-        }
-        match unit.as_str() {
-            "px" => Some(Unit::Px),
-            "pt" => Some(Unit::Pt),
-            "em" => Some(Unit::Em),
-            "%" => Some(Unit::Percent),
-            "vw" => Some(Unit::Vw),
-            "vh" => Some(Unit::Vh),
-            _ => None,
-        }
-    }
-    pub fn get_color(&self) -> Option<sdl2::pixels::Color> {
-        let mut chars = self.value.as_str().chars();
-        if chars.next() == Some('#') {
-            let mut hex = String::new();
-            for _ in 0..6 {
-                hex.push(chars.next()?);
-            }
-            let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
-            let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
-            let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
-            Some(sdl2::pixels::Color::RGB(r, g, b))
-        } else {
-            None
-        }
+        return (self.value.parse::<T>().ok(), None);
     }
 }
 
 pub struct Style {
-    pub selector: Selector,
+    pub selectors: Vec<Selector>,
     pub properties: Vec<Property>,
 }
