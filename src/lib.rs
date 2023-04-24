@@ -6,6 +6,7 @@ pub mod window;
 pub mod context;
 pub mod html;
 pub mod css;
+pub mod input;
 
 #[cfg(test)]
 mod tests {

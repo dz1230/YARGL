@@ -22,9 +22,6 @@ impl Selector {
             id,
         }
     }
-    pub fn fromString(selector: &str) -> Selector {
-        // TODO
-    }
 }
 
 pub struct Property {
