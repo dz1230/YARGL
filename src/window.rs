@@ -1,6 +1,6 @@
-use sdl2::{rect::Rect, VideoSubsystem};
+use sdl2::VideoSubsystem;
 
-use crate::element::{TextElement, Background};
+use crate::element::{TextElement, BackgroundElement};
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -33,18 +33,16 @@ trait Drawable {
     fn draw(&self, window: &mut Window);
 }
 
-impl Drawable for dyn Background {
+impl Drawable for BackgroundElement {
     fn draw(&self, window: &mut Window) {
-        window.sdl_canvas.set_draw_color(self.get_background_color());
-        window.sdl_canvas.fill_rect(Rect::new(self.get_x(), self.get_y(), self.get_width(), self.get_height())).unwrap();
+        window.sdl_canvas.set_draw_color(self.background_color);
+        window.sdl_canvas.fill_rect(self.element.get_inner_rect()).unwrap();
     }
 }
 
-impl Drawable for dyn TextElement {
+impl Drawable for TextElement<'_> {
     fn draw(&self, window: &mut Window) {
-        window.sdl_canvas.set_draw_color(self.get_font_color());
-        
-        
-        // TODO render text to texture
+        window.sdl_canvas.set_draw_color(self.font_color);
+        self.font.render(&mut window.sdl_canvas, &self.text);
     }
 }

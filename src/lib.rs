@@ -5,6 +5,7 @@ pub mod element;
 pub mod window;
 pub mod context;
 pub mod html;
+pub mod css;
 
 #[cfg(test)]
 mod tests {
@@ -16,7 +17,7 @@ mod tests {
     fn it_works() {
         let mut ctx = Context::new();
         let font_filename = "C:\\Windows\\Fonts\\arial.ttf";
-        let font = Font::new(font_filename, None, None);
+        let _font = Font::new(font_filename, None, None);
         let _window = ctx.create_window(&WindowCreationOptions {
             title: "Test".to_string(),
             width: 800,
