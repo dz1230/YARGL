@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use cssparser::BasicParseError;
 
 pub enum Unit {
     Px,
@@ -10,6 +11,7 @@ pub enum Unit {
     Vh
 }
 
+#[derive(Clone)]
 pub struct Selector {
     pub tag_name: Option<String>,
     pub class_list: Vec<String>,
@@ -59,6 +61,7 @@ impl FromStr for CssColor {
     type Err = CssParseError;
 }
 
+#[derive(Clone)]
 pub struct Property {
     pub name: String,
     pub value: String,
@@ -90,24 +93,144 @@ pub struct Style {
     pub properties: Vec<Property>,
 }
 
-pub fn parse_css(css: &str) {
+/// Parses styles from css.
+/// 
+/// Supports: Basic selectors (tag, multiple classes, id), Multiple selectors for one style, Units, Hex colors
+/// 
+/// TODO: Pseudo-classes, Pseudo-elements, Attribute selectors, Combinators, Media queries, Keyframes, Animations, Transitions, Variables, Functions, Calc, etc.
+/// 
+/// TODO: needs better error handling
+pub fn parse_css(css: &str)-> Vec<Style> {
     let mut parser_input = cssparser::ParserInput::new(css);
     let mut parser = cssparser::Parser::new(&mut parser_input);
-
+    let mut sheet: Vec<Style> = Vec::new();
+    let mut selectors: Vec<Selector> = Vec::new();
+    let mut current_selector = Selector::new(None, Vec::new(), None);
     loop {
         match parser.next() {
             Ok(token) => {
                 match token {
                     cssparser::Token::Ident(ident) => {
-                        
+                        if current_selector.tag_name.is_none() {
+                            current_selector.tag_name = Some(ident.to_string());
+                        } else {
+                            current_selector.class_list.push(ident.to_string());
+                        }
                     },
-                    cssparser::Token::Function(name) => {
-                        
+                    cssparser::Token::Hash(hash) => {
+                        current_selector.id = Some(hash.to_string());
                     },
+                    cssparser::Token::Comma => {
+                        selectors.push(current_selector.clone());
+                        current_selector = Selector::new(None, Vec::new(), None);
+                    },
+                    cssparser::Token::CurlyBracketBlock => {
+                        // Parse Style
+                        let style_result = parser.parse_nested_block(|block_parser| {
+                            let mut style = Style {
+                                selectors: Vec::new(),
+                                properties: Vec::new(),
+                            };
+                            style.selectors.append(selectors.as_mut());
+                            let mut current_property = Property {
+                                name: String::new(),
+                                value: String::new(),
+                            };
+                            let mut name_parsed = false;
+                            let mut in_property_value = false;
+                            loop {
+                                match block_parser.next() {
+                                    Ok(token) => {
+                                        match token {
+                                            cssparser::Token::Ident(ident) => {
+                                                // Parse property name
+                                                current_property.name = ident.to_string();
+                                                name_parsed = true;
+                                            },
+                                            cssparser::Token::Colon => {
+                                                if !name_parsed {
+                                                    return Err::<Style, cssparser::ParseError<'_, BasicParseError>>(cssparser::ParseError {
+                                                        kind: cssparser::ParseErrorKind::Custom(cssparser::BasicParseError {
+                                                            kind: cssparser::BasicParseErrorKind::UnexpectedToken(token.clone()),
+                                                            location: block_parser.current_source_location(),
+                                                        }),
+                                                        location: block_parser.current_source_location(),
+                                                    });
+                                                }
+                                                in_property_value = true;
+                                            },
+                                            cssparser::Token::Dimension { has_sign, value, int_value, unit } => {
+                                                if *has_sign {
+                                                    current_property.value.push('-');
+                                                }
+                                                match int_value {
+                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
+                                                    None => current_property.value.push_str(&value.to_string())
+                                                }
+                                                current_property.value.push_str(&unit.to_string());
+                                            },
+                                            cssparser::Token::Percentage { has_sign, unit_value, int_value } => {
+                                                if *has_sign {
+                                                    current_property.value.push('-');
+                                                }
+                                                match int_value {
+                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
+                                                    None => current_property.value.push_str(&((*unit_value * 100.0) as i32).to_string())
+                                                }
+                                                current_property.value.push('%');
+                                            },
+                                            cssparser::Token::Number { has_sign, value, int_value } => {
+                                                // Parse property value
+                                                if *has_sign {
+                                                    current_property.value.push('-');
+                                                }
+                                                match int_value {
+                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
+                                                    None => current_property.value.push_str(&value.to_string())
+                                                }
+                                            },
+                                            cssparser::Token::Hash(hash) => {
+                                                current_property.value.push('#');
+                                                current_property.value.push_str(&hash.to_string());
+                                            },
+                                            cssparser::Token::QuotedString(string) => {
+                                                current_property.value.push_str(string.as_ref());
+                                            },
+                                            cssparser::Token::WhiteSpace(ws) => {
+                                                if in_property_value && current_property.value.len() > 0 {
+                                                    current_property.value.push_str(*ws);
+                                                }
+                                            },
+                                            cssparser::Token::Semicolon => {
+                                                style.properties.push(current_property.clone());
+                                                in_property_value = false;
+                                                name_parsed = false;
+                                                current_property.value.clear();
+                                                current_property.name.clear();
+                                            },
+                                            _ => {}
+                                        }
+                                    },
+                                    Err(_parse_error) => return Ok(style)
+                                }
+                            }
+                        });
+                        match style_result {
+                            Ok(style) => {
+                                sheet.push(style);
+                            },
+                            Err(parse_error) => {
+                                println!("Error parsing css style: {:?}", parse_error);
+                                break;
+                            }
+                        }
+                    },
+                    cssparser::Token::CloseCurlyBracket => {},
                     _ => {}
                 }
             },
             Err(_) => break
         }
     }
+    sheet
 }
