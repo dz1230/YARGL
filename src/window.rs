@@ -1,4 +1,5 @@
 use sdl2::VideoSubsystem;
+use tl::VDom;
 
 use crate::element::{TextElement, BackgroundElement};
 
@@ -8,12 +9,13 @@ pub struct WindowCreationOptions {
     pub height: u32,
 }
 
-pub struct Window {
+pub struct Window<'a> {
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
+    vdom: VDom<'a>,
 }
 
-impl Window {
-    pub fn new(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions) -> Window {
+impl Window<'_> {
+    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions) -> Window<'a> {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -25,7 +27,17 @@ impl Window {
         .build().unwrap();
         Window {
             sdl_canvas: canvas,
+            vdom: tl::parse("", tl::ParserOptions::default()).unwrap(),
         }
+    }
+
+    pub fn set_html(&mut self, html: &str) {
+        self.vdom = tl::parse(html, tl::ParserOptions::default()).unwrap();
+    }
+
+    pub fn set_html_from_file(&mut self, filename: &str) {
+        let html = std::fs::read_to_string(filename).unwrap();
+        self.set_html(&html);
     }
 }
 

@@ -4,20 +4,20 @@ use std::rc::Rc;
 use crate::event::EventReturnCode;
 use crate::window::{Window, WindowCreationOptions};
 
-pub struct Context {
-    windows: Vec<Rc<Window>>,
+pub struct Context<'a> {
+    windows: Vec<Rc<Window<'a>>>,
     sdl: sdl2::Sdl,
     video_subsystem: sdl2::VideoSubsystem,
 }
 
-impl Context {
-    pub fn new() -> Context {
+impl Context<'_> {
+    pub fn new<'a>() -> Context<'a> {
         let sdl = sdl2::init().unwrap();
         let video_subsystem = sdl.video().unwrap();
         Context {
             windows: Vec::new(),
-            sdl: sdl,
-            video_subsystem: video_subsystem,
+            sdl,
+            video_subsystem,
         }
     }
 
