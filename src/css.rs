@@ -88,7 +88,33 @@ impl Selector {
             id,
         }
     }
+    
+    pub fn specificity(&self) -> Specificity {
+        let mut specificity = Specificity::new(0, 0, 0);
+        if self.id.is_some() {
+            specificity.add_id();
+        }
+        specificity.add_classes(self.class_list.len() as u32);
+        if self.tag_name.is_some() {
+            specificity.add_tag();
+        }
+        specificity
+    }
 
+    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>) -> bool {
+        if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.unwrap() != tag_name.unwrap() {
+            return false;
+        }
+        if self.id.is_some() && self.id.as_ref().unwrap() != id.as_ref().unwrap() {
+            return false;
+        }
+        for class in &self.class_list {
+            if !class_list.contains(class) {
+                return false;
+            }
+        }
+        true
+    }
 }
 
 pub struct CssParseError;
@@ -152,7 +178,46 @@ impl Style {
             }
         }
         return (value.parse::<T>().ok(), None);
-    }    
+    }
+    pub fn set_value(&mut self, property: &str, value: &str) {
+        self.properties.insert(property.to_string(), value.to_string());
+    }
+}
+
+struct ComputedStyle {
+    pub selector: Selector,
+    pub properties: HashMap<String, String>,
+}
+
+// TODO save specificity for each property
+impl ComputedStyle {
+    pub fn new(selector: Selector) -> ComputedStyle {
+        ComputedStyle {
+            selector,
+            properties: HashMap::new()
+        }
+    }
+
+    pub fn apply_style(&mut self, style: &Style) {
+        for (property, value) in style.properties.iter() {
+            match self.properties.get(property) {
+                Some(_) => {
+                    style.selectors.iter().for_each(|selector| {
+                        if selector.matches(&self.selector.tag_name, &self.selector.class_list, &self.selector.id) {
+                            
+                            self.properties.insert(property.to_string(), value.to_string());
+                        }
+                        if selector.specificity() > self.selector.specificity() {
+                            self.properties.insert(property.to_string(), value.to_string());
+                        }
+                    });
+                },
+                None => {
+                    self.properties.insert(property.to_string(), value.to_string());
+                },
+            }
+        }
+    }
 }
 
 /// Parses styles from css.
