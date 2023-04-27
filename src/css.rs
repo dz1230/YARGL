@@ -1,4 +1,5 @@
 use std::str::FromStr;
+use std::collections::HashMap;
 
 use cssparser::BasicParseError;
 
@@ -90,7 +91,7 @@ impl Property {
 
 pub struct Style {
     pub selectors: Vec<Selector>,
-    pub properties: Vec<Property>,
+    pub properties: HashMap<String, String>,
 }
 
 /// Parses styles from css.
@@ -129,84 +130,84 @@ pub fn parse_css(css: &str)-> Vec<Style> {
                         let style_result = parser.parse_nested_block(|block_parser| {
                             let mut style = Style {
                                 selectors: Vec::new(),
-                                properties: Vec::new(),
+                                properties: HashMap::new(),
                             };
                             style.selectors.append(selectors.as_mut());
-                            let mut current_property = Property {
-                                name: String::new(),
-                                value: String::new(),
-                            };
-                            let mut name_parsed = false;
+                            let mut property_name = String::new();
+                            let mut property_value = String::new();
                             let mut in_property_value = false;
                             loop {
                                 match block_parser.next() {
                                     Ok(token) => {
                                         match token {
                                             cssparser::Token::Ident(ident) => {
-                                                // Parse property name
-                                                current_property.name = ident.to_string();
-                                                name_parsed = true;
+                                                if in_property_value {
+                                                    property_value.push_str(&ident.to_string());
+                                                } else {
+                                                    property_name.push_str(&ident.to_string());
+                                                }
                                             },
                                             cssparser::Token::Colon => {
-                                                if !name_parsed {
-                                                    return Err::<Style, cssparser::ParseError<'_, BasicParseError>>(cssparser::ParseError {
-                                                        kind: cssparser::ParseErrorKind::Custom(cssparser::BasicParseError {
-                                                            kind: cssparser::BasicParseErrorKind::UnexpectedToken(token.clone()),
-                                                            location: block_parser.current_source_location(),
-                                                        }),
-                                                        location: block_parser.current_source_location(),
-                                                    });
-                                                }
                                                 in_property_value = true;
                                             },
                                             cssparser::Token::Dimension { has_sign, value, int_value, unit } => {
                                                 if *has_sign {
-                                                    current_property.value.push('-');
+                                                    property_value.push('-');
                                                 }
                                                 match int_value {
-                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
-                                                    None => current_property.value.push_str(&value.to_string())
+                                                    Some(int_value) => property_value.push_str(&int_value.to_string()),
+                                                    None => property_value.push_str(&value.to_string())
                                                 }
-                                                current_property.value.push_str(&unit.to_string());
+                                                property_value.push_str(&unit.to_string());
                                             },
                                             cssparser::Token::Percentage { has_sign, unit_value, int_value } => {
                                                 if *has_sign {
-                                                    current_property.value.push('-');
+                                                    property_value.push('-');
                                                 }
                                                 match int_value {
-                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
-                                                    None => current_property.value.push_str(&((*unit_value * 100.0) as i32).to_string())
+                                                    Some(int_value) => property_value.push_str(&int_value.to_string()),
+                                                    None => property_value.push_str(&((*unit_value * 100.0) as i32).to_string())
                                                 }
-                                                current_property.value.push('%');
+                                                property_value.push('%');
                                             },
                                             cssparser::Token::Number { has_sign, value, int_value } => {
                                                 // Parse property value
                                                 if *has_sign {
-                                                    current_property.value.push('-');
+                                                    property_value.push('-');
                                                 }
                                                 match int_value {
-                                                    Some(int_value) => current_property.value.push_str(&int_value.to_string()),
-                                                    None => current_property.value.push_str(&value.to_string())
+                                                    Some(int_value) => property_value.push_str(&int_value.to_string()),
+                                                    None => property_value.push_str(&value.to_string())
                                                 }
                                             },
                                             cssparser::Token::Hash(hash) => {
-                                                current_property.value.push('#');
-                                                current_property.value.push_str(&hash.to_string());
+                                                property_value.push('#');
+                                                property_value.push_str(&hash.to_string());
                                             },
                                             cssparser::Token::QuotedString(string) => {
-                                                current_property.value.push_str(string.as_ref());
+                                                property_value.push_str(string.as_ref());
                                             },
                                             cssparser::Token::WhiteSpace(ws) => {
-                                                if in_property_value && current_property.value.len() > 0 {
-                                                    current_property.value.push_str(*ws);
+                                                if in_property_value && property_value.len() > 0 {
+                                                    property_value.push_str(*ws);
                                                 }
                                             },
                                             cssparser::Token::Semicolon => {
-                                                style.properties.push(current_property.clone());
+                                                property_value = property_value.trim_end().to_string();
+                                                style.properties.insert(property_name.clone(), property_value.clone());
                                                 in_property_value = false;
-                                                name_parsed = false;
-                                                current_property.value.clear();
-                                                current_property.name.clear();
+                                                property_name.clear();
+                                                property_value.clear();
+                                            },
+                                            // This error is only thrown so that rust can infer the error type
+                                            cssparser::Token::BadString(_) => {
+                                                return Err::<Style, cssparser::ParseError<'_, BasicParseError>>(cssparser::ParseError {
+                                                    kind: cssparser::ParseErrorKind::Custom(cssparser::BasicParseError {
+                                                        kind: cssparser::BasicParseErrorKind::UnexpectedToken(token.clone()),
+                                                        location: block_parser.current_source_location(),
+                                                    }),
+                                                    location: block_parser.current_source_location(),
+                                                });
                                             },
                                             _ => {}
                                         }
