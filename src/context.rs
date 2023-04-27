@@ -1,5 +1,6 @@
 use std::vec::Vec;
 use std::rc::Rc;
+use std::collections::HashMap;
 
 use crate::event::EventReturnCode;
 use crate::window::{Window, WindowCreationOptions};
@@ -8,6 +9,7 @@ pub struct Context<'a> {
     windows: Vec<Rc<Window<'a>>>,
     sdl: sdl2::Sdl,
     video_subsystem: sdl2::VideoSubsystem,
+    html_files: HashMap<String, String>,
 }
 
 impl Context<'_> {
@@ -18,7 +20,16 @@ impl Context<'_> {
             windows: Vec::new(),
             sdl,
             video_subsystem,
+            html_files: HashMap::new(),
         }
+    }
+
+    pub fn get_html_file(&mut self, html_file: &str) -> &str {
+        if self.html_files.get(html_file).is_none() {
+            let html = std::fs::read_to_string(html_file).unwrap();
+            self.html_files.insert(html_file.to_string(), html);
+        }
+        self.html_files.get(html_file).unwrap().as_str()
     }
 
     pub fn create_window(&mut self, options: &WindowCreationOptions, html_file: &str) -> Rc<Window> {

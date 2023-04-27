@@ -11,16 +11,11 @@ pub struct WindowCreationOptions {
 
 pub struct Window<'a> {
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
-    html: String,
     vdom: VDom<'a>,
 }
 
 impl Window<'_> {
-    fn parse_html(&mut self) {
-        self.vdom = tl::parse(&self.html, tl::ParserOptions::default()).unwrap();
-    }
-
-    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html_file: &str) -> Window<'a> {
+    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html: &'a str) -> Window<'a> {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -30,13 +25,10 @@ impl Window<'_> {
         .into_canvas()
         .present_vsync()
         .build().unwrap();
-        let mut w = Window {
+        let w = Window {
             sdl_canvas: canvas,
-            html: std::fs::read_to_string(html_file).unwrap(),
-            vdom: tl::parse("", tl::ParserOptions::default()).unwrap(),
+            vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
         };
-        w.parse_html();
-        //w.vdom = tl::parse(&w.html, tl::ParserOptions::default()).unwrap();
         w
     }
 }
