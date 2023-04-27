@@ -25,11 +25,38 @@ impl Window<'_> {
         .into_canvas()
         .present_vsync()
         .build().unwrap();
-        let w = Window {
+        Window {
             sdl_canvas: canvas,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
-        };
-        w
+        }
+    }
+
+    pub fn draw(&self) {
+        let children = self.vdom.children();
+        if children.len() != 1 {
+            panic!("Window must have exactly one child");
+        }
+        self.draw_element(children.last().unwrap());
+    }
+
+    fn draw_element(&self, node_handle: &tl::NodeHandle) {
+        let node = node_handle.get(self.vdom.parser()).unwrap();
+        // Compute style
+        
+        // Draw background
+
+        // Draw text
+        let _text = node.inner_text(self.vdom.parser()).to_string();
+        
+        // Draw children
+        match node.children() {
+            Some(children) => {
+                for child in children.top().iter() {
+                    self.draw_element(child);
+                }
+            },
+            None => {}
+        }
     }
 }
 

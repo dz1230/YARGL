@@ -4,7 +4,6 @@ pub mod font;
 pub mod element;
 pub mod window;
 pub mod context;
-pub mod html;
 pub mod css;
 pub mod input;
 
