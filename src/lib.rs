@@ -23,7 +23,7 @@ mod tests {
             title: "Test".to_string(),
             width: 800,
             height: 600,
-        });
+        }, "res/html/test_1.html");
         loop {
             match ctx.poll_events() {
                 EventReturnCode::Continue => {},
@@ -32,7 +32,6 @@ mod tests {
                     break
                 }
             }
-            
         }
     }
 }

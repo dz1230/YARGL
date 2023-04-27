@@ -21,8 +21,8 @@ impl Context<'_> {
         }
     }
 
-    pub fn create_window(&mut self, options: &WindowCreationOptions) -> Rc<Window> {
-        let window = Window::new(&self.video_subsystem, options);
+    pub fn create_window(&mut self, options: &WindowCreationOptions, html_file: &str) -> Rc<Window> {
+        let window = Window::new(&self.video_subsystem, options, html_file);
         self.windows.push(Rc::new(window));
         self.windows.last().unwrap().clone()
     }

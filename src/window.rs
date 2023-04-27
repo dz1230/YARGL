@@ -11,11 +11,16 @@ pub struct WindowCreationOptions {
 
 pub struct Window<'a> {
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
+    html: String,
     vdom: VDom<'a>,
 }
 
 impl Window<'_> {
-    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions) -> Window<'a> {
+    fn parse_html(&mut self) {
+        self.vdom = tl::parse(&self.html, tl::ParserOptions::default()).unwrap();
+    }
+
+    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html_file: &str) -> Window<'a> {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -25,19 +30,14 @@ impl Window<'_> {
         .into_canvas()
         .present_vsync()
         .build().unwrap();
-        Window {
+        let mut w = Window {
             sdl_canvas: canvas,
+            html: std::fs::read_to_string(html_file).unwrap(),
             vdom: tl::parse("", tl::ParserOptions::default()).unwrap(),
-        }
-    }
-
-    pub fn set_html(&mut self, html: &str) {
-        self.vdom = tl::parse(html, tl::ParserOptions::default()).unwrap();
-    }
-
-    pub fn set_html_from_file(&mut self, filename: &str) {
-        let html = std::fs::read_to_string(filename).unwrap();
-        self.set_html(&html);
+        };
+        w.parse_html();
+        //w.vdom = tl::parse(&w.html, tl::ParserOptions::default()).unwrap();
+        w
     }
 }
 
