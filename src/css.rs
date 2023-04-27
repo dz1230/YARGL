@@ -12,6 +12,67 @@ pub enum Unit {
     Vh
 }
 
+pub struct Specificity {
+    pub a: u32,
+    pub b: u32,
+    pub c: u32,
+}
+
+impl PartialEq for Specificity {
+    fn eq(&self, other: &Self) -> bool {
+        self.a == other.a && self.b == other.b && self.c == other.c
+    }
+}
+
+impl PartialOrd for Specificity {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        if self.a == other.a {
+            if self.b == other.b {
+                self.c.partial_cmp(&other.c)
+            } else {
+                self.b.partial_cmp(&other.b)
+            }
+        } else {
+            self.a.partial_cmp(&other.a)
+        }
+    }
+}
+
+impl std::ops::Add for Specificity {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Specificity {
+            a: self.a + rhs.a,
+            b: self.b + rhs.b,
+            c: self.c + rhs.c,
+        }
+    }
+}
+
+impl Specificity {
+    pub fn new(a: u32, b: u32, c: u32) -> Specificity {
+        Specificity {
+            a,
+            b,
+            c,
+        }
+    }
+
+    pub fn add_id(&mut self) {
+        self.a += 1;
+    }
+    pub fn add_class(&mut self) {
+        self.b += 1;
+    }
+    pub fn add_classes(&mut self, n: u32) {
+        self.b += n;
+    }
+    pub fn add_tag(&mut self) {
+        self.c += 1;
+    }
+}
+
 #[derive(Clone)]
 pub struct Selector {
     pub tag_name: Option<String>,
@@ -27,6 +88,7 @@ impl Selector {
             id,
         }
     }
+
 }
 
 pub struct CssParseError;
@@ -62,17 +124,21 @@ impl FromStr for CssColor {
     type Err = CssParseError;
 }
 
-#[derive(Clone)]
-pub struct Property {
-    pub name: String,
-    pub value: String,
+pub struct Style {
+    pub selectors: Vec<Selector>,
+    pub properties: HashMap<String, String>,
 }
 
-impl Property {
-    pub fn get_value<T>(&self) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+impl Style {
+    pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+        let value = self.properties.get(property);
+        if value.is_none() {
+            return (None, None);
+        }
+        let value = value.unwrap();
         for unit in vec!["px", "pt", "em", "%", "vw", "vh"] {
-            if self.value.ends_with(unit) {
-                let val = self.value[0..self.value.len() - unit.len()].parse::<T>().ok();
+            if value.ends_with(unit) {
+                let val = value[0..value.len() - unit.len()].parse::<T>().ok();
                 let unit = match unit {
                     "px" => Some(Unit::Px),
                     "pt" => Some(Unit::Pt),
@@ -85,13 +151,8 @@ impl Property {
                 return (val, unit);
             }
         }
-        return (self.value.parse::<T>().ok(), None);
-    }
-}
-
-pub struct Style {
-    pub selectors: Vec<Selector>,
-    pub properties: HashMap<String, String>,
+        return (value.parse::<T>().ok(), None);
+    }    
 }
 
 /// Parses styles from css.
