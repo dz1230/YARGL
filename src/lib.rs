@@ -10,20 +10,17 @@ pub mod input;
 
 #[cfg(test)]
 mod tests {
-    use crate::{context::Context, event::EventReturnCode, window::WindowCreationOptions, font::Font};
+    use crate::{context::Context, event::EventReturnCode, window::{WindowCreationOptions, Window}, font::Font};
 
     //use super::*;
 
     #[test]
     fn it_works() {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
         let font_filename = "C:\\Windows\\Fonts\\arial.ttf";
         let _font = Font::new(font_filename, None, None);
-        let _window = ctx.create_window(&WindowCreationOptions {
-            title: "Test".to_string(),
-            width: 800,
-            height: 600,
-        }, "res/html/test_1.html");
+        let html = std::fs::read_to_string("res/html/test_1.html").unwrap();
+        let _window = Window::new(&ctx.video_subsystem, &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str());
         loop {
             match ctx.poll_events() {
                 EventReturnCode::Continue => {},
