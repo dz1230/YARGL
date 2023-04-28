@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::str::FromStr;
 use std::collections::HashMap;
 
@@ -12,16 +13,11 @@ pub enum Unit {
     Vh
 }
 
+#[derive(Copy, Clone, PartialEq)]
 pub struct Specificity {
     pub a: u32,
     pub b: u32,
     pub c: u32,
-}
-
-impl PartialEq for Specificity {
-    fn eq(&self, other: &Self) -> bool {
-        self.a == other.a && self.b == other.b && self.c == other.c
-    }
 }
 
 impl PartialOrd for Specificity {
@@ -101,8 +97,8 @@ impl Selector {
         specificity
     }
 
-    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>) -> bool {
-        if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.unwrap() != tag_name.unwrap() {
+    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, _node_handle: Option<tl::NodeHandle>) -> bool {
+        if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.as_ref().unwrap() != tag_name.as_ref().unwrap() {
             return false;
         }
         if self.id.is_some() && self.id.as_ref().unwrap() != id.as_ref().unwrap() {
@@ -119,7 +115,6 @@ impl Selector {
 
 pub struct CssParseError;
 
-// FUCK RUST, why do I have to do this?
 pub struct CssColor {
     pub sdl_color: sdl2::pixels::Color,
 }
@@ -182,40 +177,77 @@ impl Style {
     pub fn set_value(&mut self, property: &str, value: &str) {
         self.properties.insert(property.to_string(), value.to_string());
     }
+
+    pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node_handle: Option<tl::NodeHandle>) -> Option<&Selector> {
+        let mut selected_selector: Option<&Selector> = None;
+        for selector in &self.selectors {
+            if selector.matches(tag_name, class_list, id, node_handle) {
+                if selected_selector.is_none() || selector.specificity() > selected_selector.unwrap().specificity() {
+                    selected_selector = Some(selector);
+                }
+            }
+        }
+        selected_selector
+    }
 }
 
-struct ComputedStyle {
+pub struct SelectedStyle {
+    pub specificity: Specificity,
+    pub style: Rc<Style>,
+}
+
+impl SelectedStyle {
+    pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+        self.style.get_value(property)
+    }
+}
+
+pub struct ComputedStyle {
+    pub node_handle: tl::NodeHandle,
     pub selector: Selector,
-    pub properties: HashMap<String, String>,
+    pub properties: HashMap<String, SelectedStyle>,
 }
 
-// TODO save specificity for each property
 impl ComputedStyle {
-    pub fn new(selector: Selector) -> ComputedStyle {
+    pub fn new(node_handle: tl::NodeHandle, selector: Selector) -> ComputedStyle {
         ComputedStyle {
+            node_handle,
             selector,
             properties: HashMap::new()
         }
     }
 
-    pub fn apply_style(&mut self, style: &Style) {
-        for (property, value) in style.properties.iter() {
-            match self.properties.get(property) {
-                Some(_) => {
-                    style.selectors.iter().for_each(|selector| {
-                        if selector.matches(&self.selector.tag_name, &self.selector.class_list, &self.selector.id) {
-                            
-                            self.properties.insert(property.to_string(), value.to_string());
+    pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+        match self.properties.get(property) {
+            Some(property_style) => property_style.get_value(property),
+            None => (None, None)
+        }
+    }
+
+    pub fn apply_style(&mut self, style: Rc<Style>) {
+        match style.get_matching_selector_with_highest_specificity(&self.selector.tag_name, &self.selector.class_list, &self.selector.id, Some(self.node_handle)) {
+            Some(selected_selector) => {
+                let selected_specificity = selected_selector.specificity();
+                for (property, _value) in style.properties.iter() {
+                    match self.properties.get(property) {
+                        Some(old_style) => {
+                            if selected_specificity > old_style.specificity {
+                                self.properties.insert(property.to_string(), SelectedStyle { 
+                                    specificity: selected_specificity,
+                                    style: style.clone()
+                                });
+                            }
+                        },
+                        None => {
+                            self.properties.insert(property.to_string(), SelectedStyle { 
+                                specificity: selected_specificity,
+                                style: style.clone()
+                            });
                         }
-                        if selector.specificity() > self.selector.specificity() {
-                            self.properties.insert(property.to_string(), value.to_string());
-                        }
-                    });
-                },
-                None => {
-                    self.properties.insert(property.to_string(), value.to_string());
-                },
-            }
+                    }
+                }
+            },
+            None => {}
         }
     }
 }
