@@ -97,7 +97,7 @@ impl Selector {
         specificity
     }
 
-    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, _node_handle: Option<tl::NodeHandle>) -> bool {
+    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, _node: Option<&tl::Node>) -> bool {
         if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.as_ref().unwrap() != tag_name.as_ref().unwrap() {
             return false;
         }
@@ -179,10 +179,10 @@ impl Style {
         self.properties.insert(property.to_string(), value.to_string());
     }
 
-    pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node_handle: Option<tl::NodeHandle>) -> Option<&Selector> {
+    pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node: Option<&tl::Node>) -> Option<&Selector> {
         let mut selected_selector: Option<&Selector> = None;
         for selector in &self.selectors {
-            if selector.matches(tag_name, class_list, id, node_handle) {
+            if selector.matches(tag_name, class_list, id, node) {
                 if selected_selector.is_none() || selector.specificity() > selected_selector.unwrap().specificity() {
                     selected_selector = Some(selector);
                 }
@@ -204,15 +204,13 @@ impl SelectedStyle {
 }
 
 pub struct ComputedStyle {
-    pub node_handle: tl::NodeHandle,
     pub selector: Selector,
     pub properties: HashMap<String, SelectedStyle>,
 }
 
 impl ComputedStyle {
-    pub fn new(node_handle: tl::NodeHandle, selector: Selector) -> ComputedStyle {
+    pub fn new(selector: Selector) -> ComputedStyle {
         ComputedStyle {
-            node_handle,
             selector,
             properties: HashMap::new()
         }
@@ -225,8 +223,8 @@ impl ComputedStyle {
         }
     }
 
-    pub fn apply_style(&mut self, style: Rc<Style>) {
-        match style.get_matching_selector_with_highest_specificity(&self.selector.tag_name, &self.selector.class_list, &self.selector.id, Some(self.node_handle)) {
+    pub fn apply_style(&mut self, style: Rc<Style>, node: Option<&tl::Node>) {
+        match style.get_matching_selector_with_highest_specificity(&self.selector.tag_name, &self.selector.class_list, &self.selector.id, node) {
             Some(selected_selector) => {
                 let selected_specificity = selected_selector.specificity();
                 for (property, _value) in style.properties.iter() {

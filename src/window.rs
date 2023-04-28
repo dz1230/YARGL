@@ -1,3 +1,5 @@
+use std::{collections::HashMap, rc::Rc};
+
 use sdl2::VideoSubsystem;
 use tl::VDom;
 
@@ -12,9 +14,29 @@ pub struct WindowCreationOptions {
 pub struct Window<'a> {
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
     vdom: VDom<'a>,
+    all_styles: Vec<Rc<crate::css::Style>>,
+    computed_styles: HashMap<tl::NodeHandle, crate::css::ComputedStyle>,
 }
 
 impl Window<'_> {
+    fn compute_styles(&mut self) {
+        
+        match self.vdom.query_selector("style") {
+            Some(style_nodes) => {
+                for node_handle in style_nodes {
+                    let style_node = node_handle.get(self.vdom.parser()).unwrap();
+                    let style_text = style_node.inner_text(self.vdom.parser()).to_string();
+                    // TODO create Rc<Style> and add to all_styles
+                    self.all_styles.append(&mut crate::css::parse_css(style_text.as_str()));
+                }
+            },
+            None => {}
+        }
+        for node in self.vdom.nodes() {
+            
+        }
+    }
+
     pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html: &'a str) -> Window<'a> {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
@@ -28,6 +50,8 @@ impl Window<'_> {
         Window {
             sdl_canvas: canvas,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
+            all_styles: Vec::new(),
+            computed_styles: HashMap::new(),
         }
     }
 
