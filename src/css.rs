@@ -13,7 +13,7 @@ pub enum Unit {
     Vh
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Specificity {
     pub a: u32,
     pub b: u32,
@@ -145,6 +145,7 @@ impl FromStr for CssColor {
     type Err = CssParseError;
 }
 
+/// Holds data of a CSS class
 pub struct Style {
     pub selectors: Vec<Selector>,
     pub properties: HashMap<String, String>,
@@ -233,14 +234,14 @@ impl ComputedStyle {
                         Some(old_style) => {
                             if selected_specificity > old_style.specificity {
                                 self.properties.insert(property.to_string(), SelectedStyle { 
-                                    specificity: selected_specificity,
+                                    specificity: selected_specificity.clone(),
                                     style: style.clone()
                                 });
                             }
                         },
                         None => {
                             self.properties.insert(property.to_string(), SelectedStyle { 
-                                specificity: selected_specificity,
+                                specificity: selected_specificity.clone(),
                                 style: style.clone()
                             });
                         }
