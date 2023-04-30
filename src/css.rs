@@ -84,6 +84,30 @@ impl Selector {
             id,
         }
     }
+
+    /// Returns a selector with the tag name, all classes, and id (if it exists) of the given node.
+    pub fn complete_selector(node: &tl::Node) -> Selector {
+        let mut class_list = Vec::new();
+        let mut id = None;
+        let mut tag_name = None;
+        if let Some(tag) = node.as_tag() {
+            tag_name = tag.name().try_as_utf8_str().map_or(None, |t| Some(t.to_string()));
+            let class_attr = tag.attributes().get("class")
+            .unwrap_or(None)
+            .map_or(None, |class_attr| class_attr.try_as_utf8_str())
+            .unwrap_or("");
+            for class in class_attr.split(" ") {
+                if class.len() > 0 {
+                    class_list.push(class.to_string());
+                }
+            }
+            id = tag.attributes().get("id")
+            .unwrap_or(None)
+            .map_or(None, |id_attr| id_attr.try_as_utf8_str())
+            .map_or(None, |id_attr| Some(id_attr.to_string()));
+        }
+        Selector::new(tag_name, class_list, id)
+    }
     
     pub fn specificity(&self) -> Specificity {
         let mut specificity = Specificity::new(0, 0, 0);
@@ -97,6 +121,10 @@ impl Selector {
         specificity
     }
 
+    /// True if this selector matches the given tag name, class list, and id. 
+    /// The given class list matches if it is a superset of the selector's class list.
+    /// Tag and id only have to match if both are Some.
+    /// The node value is currently unused, but will be neccessary for matching pseudo-classes.
     pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, _node: Option<&tl::Node>) -> bool {
         if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.as_ref().unwrap() != tag_name.as_ref().unwrap() {
             return false;
@@ -110,6 +138,24 @@ impl Selector {
             }
         }
         true
+    }
+}
+
+impl ToString for Selector {
+    fn to_string(&self) -> String {
+        let mut selector = String::new();
+        if self.tag_name.is_some() {
+            selector.push_str(self.tag_name.as_ref().unwrap());
+        }
+        for class in &self.class_list {
+            selector.push('.');
+            selector.push_str(class);
+        }
+        if self.id.is_some() {
+            selector.push('#');
+            selector.push_str(self.id.as_ref().unwrap());
+        }
+        selector
     }
 }
 
@@ -177,6 +223,17 @@ impl Style {
     }
     pub fn set_value(&mut self, property: &str, value: &str) {
         self.properties.insert(property.to_string(), value.to_string());
+    }
+
+    /// Checks if one of the selectors of this style matches the given node.
+    pub fn matches(&self, node: &tl::Node) -> bool {
+        let node_selector = Selector::complete_selector(node);
+        for style_selector in &self.selectors {
+            if style_selector.matches(&node_selector.tag_name, &node_selector.class_list, &node_selector.id, Some(node)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node: Option<&tl::Node>) -> Option<&Selector> {
@@ -258,10 +315,10 @@ impl ComputedStyle {
 /// TODO: Pseudo-classes, Pseudo-elements, Attribute selectors, Combinators, Media queries, Keyframes, Animations, Transitions, Variables, Functions, Calc, etc.
 /// 
 /// TODO: needs better error handling
-pub fn parse_css(css: &str)-> Vec<Style> {
+pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
     let mut parser_input = cssparser::ParserInput::new(css);
     let mut parser = cssparser::Parser::new(&mut parser_input);
-    let mut sheet: Vec<Style> = Vec::new();
+    let mut sheet: Vec<Rc<Style>> = Vec::new();
     let mut selectors: Vec<Selector> = Vec::new();
     let mut current_selector = Selector::new(None, Vec::new(), None);
     loop {
@@ -375,7 +432,7 @@ pub fn parse_css(css: &str)-> Vec<Style> {
                         });
                         match style_result {
                             Ok(style) => {
-                                sheet.push(style);
+                                sheet.push(Rc::new(style));
                             },
                             Err(parse_error) => {
                                 println!("Error parsing css style: {:?}", parse_error);
