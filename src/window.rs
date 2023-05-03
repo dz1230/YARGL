@@ -20,14 +20,14 @@ pub struct Window<'a> {
 
 impl Window<'_> {
     /// Parses all styles from the document and stores them in all_styles. all_styles is cleared before parsing.
-    fn read_styles(&mut self) {
+    /// - html_filename: The path to the html file. Used to resolve relative paths in link tags.
+    fn read_styles(&mut self, html_filename: Option<&str>) {
         self.all_styles.clear();
         match self.vdom.query_selector("style") {
             Some(style_nodes) => {
                 for node_handle in style_nodes {
                     let style_node = node_handle.get(self.vdom.parser()).unwrap();
                     let style_text = style_node.inner_text(self.vdom.parser()).to_string();
-                    // TODO create Rc<Style> and add to all_styles
                     self.all_styles.append(&mut crate::css::parse_css(style_text.as_str()));
                 }
             },
@@ -51,7 +51,13 @@ impl Window<'_> {
                     if path_opt.is_none() {
                         continue;
                     }
-                    match std::fs::read_to_string(path_opt.unwrap()) {
+                    let path_str = path_opt.unwrap();
+                    if path_str.starts_with(".") && html_filename.is_some() {
+                        let mut path = std::path::PathBuf::from(html_filename.unwrap());
+                        path.pop();
+                        path.push(path_str);
+                    }
+                    match std::fs::read_to_string(path_str) {
                         Ok(css_text) => {
                             self.all_styles.append(&mut crate::css::parse_css(css_text.as_str()));
                         },
@@ -81,8 +87,8 @@ impl Window<'_> {
     }
 
     /// Computes the style for each node in the document and stores them in computed_styles.
-    fn compute_styles(&mut self) {
-        self.read_styles();
+    fn compute_styles(&mut self, html_filename: Option<&str>) {
+        self.read_styles(html_filename);
         // TODO: Optimize this (vdom.nodes() gives references to nodes but nodes cant hash, and there is no good way to get a node handle from a node. computing styles while collecting the node handles is not possible because...
         // we need to get the node out of the node handle to check if a style matches and to get it's children, but to get the node it is neccessary to borrow the self.vdom.parser() which means we cant borrow self as mutable at the same time, which
         // happen if we would recursively compute the styles for the node's children. Therefore all node handles are currently collected before computing the styles, and then we traverse the whole tree again to compute the styles.
@@ -110,7 +116,8 @@ impl Window<'_> {
         }
     }
 
-    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html: &'a str) -> Window<'a> {
+    /// Creates a new window and parses the given html.
+    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a> {
         let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -126,7 +133,7 @@ impl Window<'_> {
             all_styles: Vec::new(),
             computed_styles: HashMap::new(),
         };
-        w.compute_styles();
+        w.compute_styles(html_filename);
         w
     }
 
@@ -136,6 +143,7 @@ impl Window<'_> {
         for node_handle in all_handles {
             self.draw_element(&node_handle);
         }
+        self.sdl_canvas.present();
     }
 
     fn draw_element(&mut self, node_handle: &tl::NodeHandle) {

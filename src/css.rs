@@ -3,7 +3,14 @@ use std::str::FromStr;
 use std::collections::HashMap;
 
 use cssparser::BasicParseError;
+use strum::IntoEnumIterator;
+use strum_macros::EnumIter;
 
+/// An error which occured while parsing a Unit from a string.
+pub struct CssUnitParseError;
+
+/// Unit of a css value.
+#[derive(EnumIter)]
 pub enum Unit {
     Px,
     Pt,
@@ -13,6 +20,36 @@ pub enum Unit {
     Vh
 }
 
+impl ToString for Unit {
+    fn to_string(&self) -> String {
+        match self {
+            Unit::Px => "px".to_string(),
+            Unit::Pt => "pt".to_string(),
+            Unit::Em => "em".to_string(),
+            Unit::Percent => "%".to_string(),
+            Unit::Vw => "vw".to_string(),
+            Unit::Vh => "vh".to_string(),
+        }
+    }
+}
+
+impl FromStr for Unit {
+    type Err = CssUnitParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "px" => Ok(Unit::Px),
+            "pt" => Ok(Unit::Pt),
+            "em" => Ok(Unit::Em),
+            "%" => Ok(Unit::Percent),
+            "vw" => Ok(Unit::Vw),
+            "vh" => Ok(Unit::Vh),
+            _ => Err(CssUnitParseError {}),
+        }
+    }
+}
+
+/// CSS specificity. Used to resolve conflicts between rules.
 #[derive(Clone, PartialEq)]
 pub struct Specificity {
     pub a: u32,
@@ -109,6 +146,7 @@ impl Selector {
         Selector::new(tag_name, class_list, id)
     }
     
+    /// Returns the specificity of this selector.
     pub fn specificity(&self) -> Specificity {
         let mut specificity = Specificity::new(0, 0, 0);
         if self.id.is_some() {
@@ -159,7 +197,8 @@ impl ToString for Selector {
     }
 }
 
-pub struct CssParseError;
+/// An error which occured while parsing a Color from a string.
+pub struct CssColorParseError;
 
 pub struct CssColor {
     pub sdl_color: sdl2::pixels::Color,
@@ -175,56 +214,54 @@ impl FromStr for CssColor {
                 for _ in 0..2 {
                     match chars.next() {
                         Some(ch) => hex.push(ch),
-                        None => return Err(CssParseError {})
+                        None => return Err(CssColorParseError {})
                     }
                 }
                 match u8::from_str_radix(&hex, 16) {
                     Ok(num) => color.push(num),
-                    Err(_) => return Err(CssParseError {})
+                    Err(_) => return Err(CssColorParseError {})
                 }
             }
             Ok(CssColor { sdl_color: sdl2::pixels::Color::RGB(color[0], color[1], color[2]) })
         } else {
-            Err(CssParseError {})
+            Err(CssColorParseError {})
         }
     }
-    type Err = CssParseError;
+    type Err = CssColorParseError;
 }
 
-/// Holds data of a CSS class
+/// Holds data of a CSS style rule.
 pub struct Style {
     pub selectors: Vec<Selector>,
-    pub properties: HashMap<String, String>,
+    properties: HashMap<String, String>,
 }
 
 impl Style {
+    /// Returns the value of the given property, with a unit if it has one.
+    /// For supported units, see [Unit].
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
         let value = self.properties.get(property);
         if value.is_none() {
             return (None, None);
         }
         let value = value.unwrap();
-        for unit in vec!["px", "pt", "em", "%", "vw", "vh"] {
-            if value.ends_with(unit) {
-                let val = value[0..value.len() - unit.len()].parse::<T>().ok();
-                let unit = match unit {
-                    "px" => Some(Unit::Px),
-                    "pt" => Some(Unit::Pt),
-                    "em" => Some(Unit::Em),
-                    "%" => Some(Unit::Percent),
-                    "vw" => Some(Unit::Vw),
-                    "vh" => Some(Unit::Vh),
-                    _ => None,
-                };
-                return (val, unit);
+        for unit in Unit::iter() {
+            let unit_str = unit.to_string();
+            if value.ends_with(unit_str.as_str()) {
+                let val = value[0..value.len() - unit_str.len()].parse::<T>().ok();
+                return (val, Some(unit));
             }
         }
         return (value.parse::<T>().ok(), None);
     }
-    pub fn set_value(&mut self, property: &str, value: &str) {
+    /// Sets the value of the given property, optionally with a unit.
+    pub fn set_value<T>(&mut self, property: &str, value: &T, unit: Option<Unit>) where T: std::string::ToString {
+        let mut value = value.to_string();
+        if let Some(unit) = unit {
+            value.push_str(unit.to_string().as_str());
+        }
         self.properties.insert(property.to_string(), value.to_string());
     }
-
     /// Checks if one of the selectors of this style matches the given node.
     pub fn matches(&self, node: &tl::Node) -> bool {
         let node_selector = Selector::complete_selector(node);
@@ -235,7 +272,7 @@ impl Style {
         }
         return false;
     }
-
+    /// Returns the matching selector with the highest specificity, or None if no selector matches.
     pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node: Option<&tl::Node>) -> Option<&Selector> {
         let mut selected_selector: Option<&Selector> = None;
         for selector in &self.selectors {
@@ -249,19 +286,27 @@ impl Style {
     }
 }
 
+/// A style that was selected for a property on a specific node, based on it's specificity.
 pub struct SelectedStyle {
-    pub specificity: Specificity,
-    pub style: Rc<Style>,
+    specificity: Specificity,
+    style: Rc<Style>,
 }
 
 impl SelectedStyle {
+    /// Returns the value of the given property, with a unit if it has one.
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
         self.style.get_value(property)
     }
+    /// Returns the specificity based on which the style was selected. This should be the specificity of one
+    /// of the matching selectors of the underlying style.
+    pub fn specificity(&self) -> &Specificity {
+        &self.specificity
+    }
 }
 
+/// A style that was computed for a specific node.
 pub struct ComputedStyle {
-    pub selector: Selector,
+    selector: Selector,
     pub properties: HashMap<String, SelectedStyle>,
 }
 
@@ -271,6 +316,10 @@ impl ComputedStyle {
             selector,
             properties: HashMap::new()
         }
+    }
+
+    pub fn selector(&self) -> &Selector {
+        &self.selector
     }
 
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
@@ -287,7 +336,7 @@ impl ComputedStyle {
                 for (property, _value) in style.properties.iter() {
                     match self.properties.get(property) {
                         Some(old_style) => {
-                            if selected_specificity > old_style.specificity {
+                            if selected_specificity > *old_style.specificity() {
                                 self.properties.insert(property.to_string(), SelectedStyle { 
                                     specificity: selected_specificity.clone(),
                                     style: style.clone()
@@ -308,7 +357,7 @@ impl ComputedStyle {
     }
 }
 
-/// Parses styles from css.
+/// Parses style rules from css.
 /// 
 /// Supports: Basic selectors (tag, multiple classes, id), Multiple selectors for one style, Units, Hex colors
 /// 
@@ -316,6 +365,7 @@ impl ComputedStyle {
 /// 
 /// TODO: needs better error handling
 pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
+    println!("Parsing CSS: {} lines", css.lines().count());
     let mut parser_input = cssparser::ParserInput::new(css);
     let mut parser = cssparser::Parser::new(&mut parser_input);
     let mut sheet: Vec<Rc<Style>> = Vec::new();

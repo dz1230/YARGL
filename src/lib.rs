@@ -18,8 +18,9 @@ mod tests {
         let ctx = Context::new();
         let font_filename = "C:\\Windows\\Fonts\\arial.ttf";
         let _font = Font::new(font_filename, None, None);
-        let html = std::fs::read_to_string("res/html/test_1.html").unwrap();
-        let _window = Window::new(&ctx.video_subsystem, &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str());
+        let html_filename = "res/html/test_1.html";
+        let html = std::fs::read_to_string(html_filename).unwrap();
+        let _window = Window::new(&ctx.video_subsystem, &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename));
         loop {
             match ctx.poll_events() {
                 EventReturnCode::Continue => {},
