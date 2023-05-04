@@ -20,7 +20,8 @@ mod tests {
         let _font = Font::new(font_filename, None, None);
         let html_filename = "res/html/test_1.html";
         let html = std::fs::read_to_string(html_filename).unwrap();
-        let _window = Window::new(&ctx.video_subsystem, &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename));
+        let mut _window = Window::new(&ctx.video_subsystem, &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename));
+        _window.draw();
         loop {
             match ctx.poll_events() {
                 EventReturnCode::Continue => {},

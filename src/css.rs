@@ -50,7 +50,7 @@ impl FromStr for Unit {
 }
 
 /// CSS specificity. Used to resolve conflicts between rules.
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Specificity {
     pub a: u32,
     pub b: u32,
@@ -200,12 +200,15 @@ impl ToString for Selector {
 /// An error which occured while parsing a Color from a string.
 pub struct CssColorParseError;
 
+#[derive(Debug)]
 pub struct CssColor {
     pub sdl_color: sdl2::pixels::Color,
 }
 
 impl FromStr for CssColor {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO figure out why color parsing is broken
+        println!("Parsing color: {}", s);
         let mut chars = s.chars();
         if chars.next() == Some('#') {
             let mut color: Vec<u8> = Vec::new();
@@ -287,6 +290,7 @@ impl Style {
     }
 }
 
+#[derive(Debug)]
 /// A style that was selected for a property on a specific node, based on it's specificity.
 pub struct SelectedStyle {
     specificity: Specificity,
@@ -305,6 +309,7 @@ impl SelectedStyle {
     }
 }
 
+#[derive(Debug)]
 /// A style that was computed for a specific node.
 pub struct ComputedStyle {
     selector: Selector,
@@ -511,10 +516,6 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
             },
             Err(_) => break
         }
-    }
-    println!("Parsed CSS: {} styles", sheet.len());
-    for style in sheet.iter() {
-        println!("Style: {:?}", style);
     }
     sheet
 }

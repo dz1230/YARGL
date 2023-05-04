@@ -93,27 +93,21 @@ impl Window<'_> {
 
     /// Computes the style for each node in the document and stores them in computed_styles.
     fn compute_styles(&mut self, html_filename: Option<&str>) {
-        self.read_styles(html_filename);
-        // TODO: Optimize this (vdom.nodes() gives references to nodes but nodes cant hash, and there is no good way to get a node handle from a node. computing styles while collecting the node handles is not possible because...
-        // we need to get the node out of the node handle to check if a style matches and to get it's children, but to get the node it is neccessary to borrow the self.vdom.parser() which means we cant borrow self as mutable at the same time, which
-        // happen if we would recursively compute the styles for the node's children. Therefore all node handles are currently collected before computing the styles, and then we traverse the whole tree again to compute the styles.
-        // There MUST be a better way to do this.
-        let all_handles = self.get_all_handles(self.vdom.children());
-        for node_handle in all_handles {
-            let node = node_handle.get(self.vdom.parser()).unwrap();
-            if node.as_tag().is_some() {
-                for style in self.all_styles.iter() {
-                    if !style.matches(node) {
-                        continue;
-                    }
-                    match self.computed_styles.get_mut(&node_handle) {
-                        Some(computed_style) => {
-                            computed_style.apply_style(style.clone(), Some(node))
-                        },
-                        None => {
-                            let mut computed_style = crate::css::ComputedStyle::new(crate::css::Selector::complete_selector(node));
-                            computed_style.apply_style(style.clone(), Some(node));
-                            self.computed_styles.insert(node_handle, computed_style);
+        self.read_styles(html_filename);    
+        for style in self.all_styles.iter() {
+            for selector in style.selectors.iter() {
+                if let Some(nodes) = self.vdom.query_selector(selector.to_string().as_str()) {
+                    for node_handle in nodes {
+                        let node = node_handle.get(self.vdom.parser()).unwrap();
+                        match self.computed_styles.get_mut(&node_handle) {
+                            Some(computed_style) => {
+                                computed_style.apply_style(style.clone(), Some(node))
+                            },
+                            None => {
+                                let mut computed_style = crate::css::ComputedStyle::new(crate::css::Selector::complete_selector(node));
+                                computed_style.apply_style(style.clone(), Some(node));
+                                self.computed_styles.insert(node_handle, computed_style);
+                            }
                         }
                     }
                 }
@@ -143,7 +137,13 @@ impl Window<'_> {
     }
 
     pub fn draw(&mut self) {
-        // TODO optimize this (same problem as in compute_styles)
+        
+        // TODO: Optimize this (vdom.nodes() gives references to nodes but nodes cant hash, and there is no good way to get a node handle from a node. computing styles while collecting the node handles is not possible because...
+        // we need to get the node out of the node handle to check if a style matches and to get it's children, but to get the node it is neccessary to borrow the self.vdom.parser() which means we cant borrow self as mutable at the same time, which
+        // happen if we would recursively compute the styles for the node's children. Therefore all node handles are currently collected before computing the styles, and then we traverse the whole tree again to compute the styles.
+        // There MUST be a better way to do this.
+        
+        // TODO optimize this (problem see above)
         let all_handles = self.get_all_handles(self.vdom.children());
         for node_handle in all_handles {
             self.draw_element(&node_handle);
@@ -155,11 +155,13 @@ impl Window<'_> {
         let node = node_handle.get(self.vdom.parser()).unwrap();
         let style = self.computed_styles.get(node_handle);
         if style.is_some() {
+            println!("{:?}", node.as_tag().unwrap().name());
             let style = style.unwrap();
             // Draw background
             let (width, _width_unit) = style.get_value::<f32>("width");
             let (height, _height_unit) = style.get_value::<f32>("height");
             let (background_color, _) = style.get_value::<crate::css::CssColor>("background-color");
+            println!("{:?} {:?} {:?}", width, height, background_color);
             if width.is_some() && height.is_some() && background_color.is_some() {
                 let width = width.unwrap();
                 let height = height.unwrap();
