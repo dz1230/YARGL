@@ -33,7 +33,8 @@ impl Window<'_> {
             },
             None => {}
         }
-        match self.vdom.query_selector("link[rel=\"stylesheet\", type=\"text/css\"]") {
+
+        match self.vdom.query_selector("link[rel=\"stylesheet\"]") {
             Some(link_nodes) => {
                 for node_handle in link_nodes {
                     let link_node = node_handle.get(self.vdom.parser()).unwrap();
@@ -51,12 +52,16 @@ impl Window<'_> {
                     if path_opt.is_none() {
                         continue;
                     }
-                    let path_str = path_opt.unwrap();
+                    let mut path: std::path::PathBuf;
+                    let mut path_str = path_opt.unwrap();
                     if path_str.starts_with(".") && html_filename.is_some() {
-                        let mut path = std::path::PathBuf::from(html_filename.unwrap());
+                        path = std::path::PathBuf::from(html_filename.unwrap());
                         path.pop();
                         path.push(path_str);
+                    } else {
+                        path = std::path::PathBuf::from(path_str);
                     }
+                    path_str = path.to_str().unwrap();
                     match std::fs::read_to_string(path_str) {
                         Ok(css_text) => {
                             self.all_styles.append(&mut crate::css::parse_css(css_text.as_str()));

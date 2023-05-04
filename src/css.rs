@@ -106,7 +106,7 @@ impl Specificity {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Selector {
     pub tag_name: Option<String>,
     pub class_list: Vec<String>,
@@ -167,7 +167,7 @@ impl Selector {
         if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.as_ref().unwrap() != tag_name.as_ref().unwrap() {
             return false;
         }
-        if self.id.is_some() && self.id.as_ref().unwrap() != id.as_ref().unwrap() {
+        if self.id.is_some() && id.is_some() && self.id.as_ref().unwrap() != id.as_ref().unwrap() {
             return false;
         }
         for class in &self.class_list {
@@ -230,6 +230,7 @@ impl FromStr for CssColor {
     type Err = CssColorParseError;
 }
 
+#[derive(Debug)]
 /// Holds data of a CSS style rule.
 pub struct Style {
     pub selectors: Vec<Selector>,
@@ -365,31 +366,41 @@ impl ComputedStyle {
 /// 
 /// TODO: needs better error handling
 pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
-    println!("Parsing CSS: {} lines", css.lines().count());
     let mut parser_input = cssparser::ParserInput::new(css);
     let mut parser = cssparser::Parser::new(&mut parser_input);
     let mut sheet: Vec<Rc<Style>> = Vec::new();
     let mut selectors: Vec<Selector> = Vec::new();
     let mut current_selector = Selector::new(None, Vec::new(), None);
+    let mut expect_class = false;
     loop {
         match parser.next() {
             Ok(token) => {
                 match token {
                     cssparser::Token::Ident(ident) => {
-                        if current_selector.tag_name.is_none() {
-                            current_selector.tag_name = Some(ident.to_string());
-                        } else {
+                        if expect_class {
                             current_selector.class_list.push(ident.to_string());
+                            expect_class = false;
+                        } else {
+                            if current_selector.tag_name.is_none() {
+                                current_selector.tag_name = Some(ident.to_string());
+                            }
                         }
                     },
-                    cssparser::Token::Hash(hash) => {
-                        current_selector.id = Some(hash.to_string());
+                    cssparser::Token::Delim(_) => {
+                        expect_class = true;
+                    },
+                    cssparser::Token::IDHash(id) => {
+                        if current_selector.id.is_none() {
+                            current_selector.id = Some(id.to_string());
+                        }
                     },
                     cssparser::Token::Comma => {
                         selectors.push(current_selector.clone());
                         current_selector = Selector::new(None, Vec::new(), None);
                     },
                     cssparser::Token::CurlyBracketBlock => {
+                        selectors.push(current_selector.clone());
+                        current_selector = Selector::new(None, Vec::new(), None);
                         // Parse Style
                         let style_result = parser.parse_nested_block(|block_parser| {
                             let mut style = Style {
@@ -444,6 +455,10 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                                                     None => property_value.push_str(&value.to_string())
                                                 }
                                             },
+                                            cssparser::Token::IDHash(hash) => {
+                                                property_value.push('#');
+                                                property_value.push_str(&hash.to_string());
+                                            },
                                             cssparser::Token::Hash(hash) => {
                                                 property_value.push('#');
                                                 property_value.push_str(&hash.to_string());
@@ -496,6 +511,10 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
             },
             Err(_) => break
         }
+    }
+    println!("Parsed CSS: {} styles", sheet.len());
+    for style in sheet.iter() {
+        println!("Style: {:?}", style);
     }
     sheet
 }
