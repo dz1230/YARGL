@@ -134,7 +134,7 @@ impl Selector {
             .map_or(None, |class_attr| class_attr.try_as_utf8_str())
             .unwrap_or("");
             for class in class_attr.split(" ") {
-                if class.len() > 0 {
+                if !class.is_empty() {
                     class_list.push(class.to_string());
                 }
             }
@@ -207,8 +207,6 @@ pub struct CssColor {
 
 impl FromStr for CssColor {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // TODO figure out why color parsing is broken
-        println!("Parsing color: {}", s);
         let mut chars = s.chars();
         if chars.next() == Some('#') {
             let mut color: Vec<u8> = Vec::new();
@@ -430,6 +428,11 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                                             cssparser::Token::Colon => {
                                                 in_property_value = true;
                                             },
+                                            cssparser::Token::Comma => {
+                                                if in_property_value {
+                                                    property_value.push(',');
+                                                }
+                                            },
                                             cssparser::Token::Dimension { has_sign, value, int_value, unit } => {
                                                 if *has_sign {
                                                     property_value.push('-');
@@ -472,7 +475,7 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                                                 property_value.push_str(string.as_ref());
                                             },
                                             cssparser::Token::WhiteSpace(ws) => {
-                                                if in_property_value && property_value.len() > 0 {
+                                                if in_property_value && !property_value.is_empty() {
                                                     property_value.push_str(*ws);
                                                 }
                                             },

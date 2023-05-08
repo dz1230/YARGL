@@ -1,19 +1,46 @@
 
-use crate::event::EventReturnCode;
+use std::collections::HashMap;
 
-pub struct Context {
+use crate::{event::EventReturnCode, font::Font};
+
+pub struct Context<'a> {
     sdl: sdl2::Sdl,
     pub video_subsystem: sdl2::VideoSubsystem,
+    fonts: HashMap<String, Font<'a>>
 }
 
-impl Context {
-    pub fn new() -> Context {
+impl Context<'_> {
+    pub fn new<'a>() -> Context<'a> {
         let sdl = sdl2::init().unwrap();
         let video_subsystem = sdl.video().unwrap();
         Context {
             sdl,
-            video_subsystem
+            video_subsystem,
+            fonts: HashMap::new()
         }
+    }
+
+    pub fn load_font<'b>(&'b mut self, path: &std::path::Path) {
+        if !path.is_absolute() {
+            match std::env::current_dir() {
+                Ok(mut current_dir) => {
+                    current_dir.push(path);
+                    return self.load_font(current_dir.as_path());
+                },
+                Err(_) => {}
+            }
+        }
+        if let Some(os_name) = path.file_stem()  {
+            if let Some(name) = os_name.to_str() {
+                self.fonts.insert(name.to_lowercase(), Font::new());
+                let mut font = self.fonts.get_mut(name.to_lowercase().as_str()).unwrap();
+                font.load_faces(path, 0, 1);
+            }
+        }
+    }
+
+    pub fn get_font(&self, name: &str) -> Option<&Font> {
+        self.fonts.get(name.to_lowercase().as_str())
     }
 
     pub fn poll_events(&self) -> EventReturnCode {

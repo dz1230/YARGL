@@ -1,9 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
-use sdl2::VideoSubsystem;
 use tl::VDom;
 
-use crate::element::{TextElement, BackgroundElement};
+use crate::{element::{TextElement, BackgroundElement}, context::Context};
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -12,6 +11,7 @@ pub struct WindowCreationOptions {
 }
 
 pub struct Window<'a> {
+    ctx: Rc<Context<'a>>,
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
     vdom: VDom<'a>,
     all_styles: Vec<Rc<crate::css::Style>>,
@@ -116,8 +116,8 @@ impl Window<'_> {
     }
 
     /// Creates a new window and parses the given html.
-    pub fn new<'a>(video_subsystem: &VideoSubsystem, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a> {
-        let sdl_window = video_subsystem.window(&options.title, options.width, options.height)
+    pub fn new<'a>(ctx: Rc<Context<'a>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a> {
+        let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
             .build()
@@ -127,6 +127,7 @@ impl Window<'_> {
         .present_vsync()
         .build().unwrap();
         let mut w = Window {
+            ctx: ctx.clone(),
             sdl_canvas: canvas,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
             all_styles: Vec::new(),
@@ -151,6 +152,7 @@ impl Window<'_> {
         self.sdl_canvas.present();
     }
 
+    /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
     fn draw_element(&mut self, node_handle: &tl::NodeHandle) {
         let node = node_handle.get(self.vdom.parser()).unwrap();
         let style = self.computed_styles.get(node_handle);
@@ -161,8 +163,8 @@ impl Window<'_> {
             let (width, _width_unit) = style.get_value::<f32>("width");
             let (height, _height_unit) = style.get_value::<f32>("height");
             let (background_color, _) = style.get_value::<crate::css::CssColor>("background-color");
-            println!("{:?} {:?} {:?}", width, height, background_color);
             if width.is_some() && height.is_some() && background_color.is_some() {
+                println!("{:?} {:?} {:?}", width, height, background_color);
                 let width = width.unwrap();
                 let height = height.unwrap();
                 let background_color = background_color.unwrap();
@@ -170,8 +172,23 @@ impl Window<'_> {
                 self.sdl_canvas.fill_rect(sdl2::rect::Rect::new(0, 0, width as u32, height as u32)).unwrap();
             }
             // Draw text
-            let _text = node.inner_text(self.vdom.parser()).to_string();
-            // TODO draw text
+            let text = node.inner_text(self.vdom.parser()).to_string();
+            let (font_family_opt, _) = style.get_value::<String>("font-family");
+            let (font_color_opt, _) = style.get_value::<crate::css::CssColor>("color");
+            if font_family_opt.is_some() && font_color_opt.is_some() {
+                let font_family = font_family_opt.unwrap();
+                let font_color = font_color_opt.unwrap();
+                println!("Font: {:?} {:?}", font_family, font_color);
+                self.sdl_canvas.set_draw_color(font_color.sdl_color);
+                for font_name in font_family.split(',') {
+                    let font_name = font_name.trim();
+                    if let Some(font) = self.ctx.get_font(font_name) {
+                        println!("Found font: {:?}", font_name);
+                        font.render(&mut self.sdl_canvas, text.as_str());
+                        break;
+                    }
+                }
+            }
         }
     }
 }
