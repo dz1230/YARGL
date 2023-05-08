@@ -10,15 +10,15 @@ pub struct WindowCreationOptions {
     pub height: u32,
 }
 
-pub struct Window<'a> {
-    ctx: Rc<Context<'a>>,
+pub struct Window<'a, 'f, 'ff> {
+    ctx: Rc<Context<'f, 'ff>>,
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
     vdom: VDom<'a>,
     all_styles: Vec<Rc<crate::css::Style>>,
     computed_styles: HashMap<tl::NodeHandle, crate::css::ComputedStyle>,
 }
 
-impl Window<'_> {
+impl Window<'_, '_, '_> {
     /// Parses all styles from the document and stores them in all_styles. all_styles is cleared before parsing.
     /// - html_filename: The path to the html file. Used to resolve relative paths in link tags.
     fn read_styles(&mut self, html_filename: Option<&str>) {
@@ -116,7 +116,7 @@ impl Window<'_> {
     }
 
     /// Creates a new window and parses the given html.
-    pub fn new<'a>(ctx: Rc<Context<'a>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a> {
+    pub fn new<'a, 'f, 'ff>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff> {
         let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             .resizable()
@@ -182,7 +182,8 @@ impl Window<'_> {
                 self.sdl_canvas.set_draw_color(font_color.sdl_color);
                 for font_name in font_family.split(',') {
                     let font_name = font_name.trim();
-                    if let Some(font) = self.ctx.get_font(font_name) {
+                    // if let Some(font) = self.ctx.get_font(font_name) {
+                    if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
                         println!("Found font: {:?}", font_name);
                         font.render(&mut self.sdl_canvas, text.as_str());
                         break;

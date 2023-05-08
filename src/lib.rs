@@ -11,14 +11,16 @@ pub mod input;
 mod tests {
     use std::rc::Rc;
 
-    use crate::{context::Context, event::EventReturnCode, window::{WindowCreationOptions, Window}};
+    use crate::{context::Context, event::EventReturnCode, window::{WindowCreationOptions, Window}, font::Font};
 
     //use super::*;
 
     #[test]
     fn it_works() {
         let mut raw_ctx = Context::new();
-        raw_ctx.load_font(std::path::Path::new("C:\\Windows\\Fonts\\arial.ttf"));
+        let font_data_arial = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").unwrap();
+        let arial_font = Font::new(&font_data_arial, 0, 1);
+        raw_ctx.fonts.insert("arial".to_string(), &arial_font);
         let ctx = Rc::new(raw_ctx);
         let html_filename = "res/html/test_1.html";
         let html = std::fs::read_to_string(html_filename).unwrap();

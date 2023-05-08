@@ -67,36 +67,23 @@ impl<Target : sdl2::render::RenderTarget> ttf_parser::OutlineBuilder for TextCan
 
 #[derive(Clone)]
 pub struct Font<'a> {
-    data: Vec<u8>,
     faces: HashMap<u32, ttf_parser::Face<'a>>,
     pub used_index: u32,
 }
 
 impl<'a> Font<'a> {
-    pub fn new() -> Font<'a> {
-        Font {
-            data: Vec::new(),
+    pub fn new<'b: 'a>(data: &'b Vec<u8>, min: u32, max: u32) -> Font<'a> {
+        let mut font = Font {
             faces: HashMap::new(),
             used_index: 0,
+        };
+        for index in min..max {
+            if let Ok(face) = ttf_parser::Face::parse(data, index) {
+                println!("Loaded face {}: {:?}", index, face);
+                font.faces.insert(index, face);
+            }
         }
-    }
-
-    pub fn load_faces<'b: 'a>(&'b mut self, file: &std::path::Path, min: u32, max: u32) {
-        match std::fs::read(file) {
-            Ok(data) => {
-                self.data = data;
-                self.faces = HashMap::new();
-                for index in min..max {
-                    if let Ok(face) = ttf_parser::Face::parse(&self.data, index) {
-                        println!("Loaded face {}: {:?}", index, face);
-                        self.faces.insert(index, face);
-                    }
-                }
-            },
-            Err(error) => {
-                println!("Failed to load font file {}: {}", file.display(), error);
-            },
-        }
+        font
     }
 
     pub fn face(&self) -> Option<&ttf_parser::Face<'a>> {
@@ -111,14 +98,11 @@ impl<'a> Font<'a> {
             },
             Some(face) => {
                 let mut builder = TextCanvasBuilder::new(canvas);
-                for char in text.chars() {
-                    let glyph_id_option = face.glyph_index(char);
-                    if glyph_id_option.is_none() {
-                        continue;
+                for c in text.chars() {
+                    if let Some(glyph_id) = face.glyph_index(c) {
+                        let _bbox = face.outline_glyph(glyph_id, &mut builder);
+                        builder.x += face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
                     }
-                    let glyph_id = glyph_id_option.unwrap();
-                    face.outline_glyph(glyph_id, &mut builder).unwrap();
-                    builder.x += face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
                 }
             }
         }
