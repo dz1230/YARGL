@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use tl::VDom;
 
-use crate::{element::{TextElement, BackgroundElement}, context::Context};
+use crate::context::Context;
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -191,23 +191,5 @@ impl Window<'_, '_, '_> {
                 }
             }
         }
-    }
-}
-
-trait Drawable {
-    fn draw(&self, window: &mut Window);
-}
-
-impl Drawable for BackgroundElement {
-    fn draw(&self, window: &mut Window) {
-        window.sdl_canvas.set_draw_color(self.background_color);
-        window.sdl_canvas.fill_rect(self.element.get_inner_rect()).unwrap();
-    }
-}
-
-impl Drawable for TextElement<'_> {
-    fn draw(&self, window: &mut Window) {
-        window.sdl_canvas.set_draw_color(self.font_color);
-        self.font.render(&mut window.sdl_canvas, &self.text);
     }
 }

@@ -1,8 +1,6 @@
-use sdl2::pixels::Color;
 use std::ptr::eq;
 use std::rc::Rc;
 
-use crate::font::Font;
 use crate::event::{Event, EventReceiver, EventReturnCode};
 
 pub struct Element {
@@ -67,19 +65,6 @@ impl Element {
     pub fn add_children(&mut self, children: Vec<Rc<Element>>) {
         self.children.extend(children);
     }
-}
-
-pub struct BackgroundElement {
-    pub element: Element,
-    pub background_color: Color,
-}
-
-pub struct TextElement<'a> {
-    pub element: Element,
-    pub text: String,
-    pub font: Rc<Font<'a>>,
-    pub font_size: u32,
-    pub font_color: Color,
 }
 
 // default implementation
