@@ -17,7 +17,15 @@ pub enum Unit {
     Em,
     Percent,
     Vw,
-    Vh
+    Vh,
+    Vmin,
+    Vmax,
+    Cm,
+    Mm,
+    Q,
+    In,
+    Pc,
+    Fr,
 }
 
 impl ToString for Unit {
@@ -29,6 +37,14 @@ impl ToString for Unit {
             Unit::Percent => "%".to_string(),
             Unit::Vw => "vw".to_string(),
             Unit::Vh => "vh".to_string(),
+            Unit::Vmin => "vmin".to_string(),
+            Unit::Vmax => "vmax".to_string(),
+            Unit::Cm => "cm".to_string(),
+            Unit::Mm => "mm".to_string(),
+            Unit::Q => "Q".to_string(),
+            Unit::In => "in".to_string(),
+            Unit::Pc => "pc".to_string(),
+            Unit::Fr => "fr".to_string(),
         }
     }
 }
@@ -44,7 +60,110 @@ impl FromStr for Unit {
             "%" => Ok(Unit::Percent),
             "vw" => Ok(Unit::Vw),
             "vh" => Ok(Unit::Vh),
+            "vmin" => Ok(Unit::Vmin),
+            "vmax" => Ok(Unit::Vmax),
+            "cm" => Ok(Unit::Cm),
+            "mm" => Ok(Unit::Mm),
+            "Q" => Ok(Unit::Q),
+            "in" => Ok(Unit::In),
+            "pc" => Ok(Unit::Pc),
+            "fr" => Ok(Unit::Fr),
             _ => Err(CssUnitParseError {}),
+        }
+    }
+}
+
+pub struct CssValueParseError;
+
+pub enum BoxSizing {
+    ContentBox,
+    BorderBox,
+}
+
+impl ToString for BoxSizing {
+    fn to_string(&self) -> String {
+        match self {
+            BoxSizing::ContentBox => "content-box".to_string(),
+            BoxSizing::BorderBox => "border-box".to_string(),
+        }
+    }
+}
+
+impl FromStr for BoxSizing {
+    type Err = CssValueParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "content-box" => Ok(BoxSizing::ContentBox),
+            "border-box" => Ok(BoxSizing::BorderBox),
+            _ => Err(CssValueParseError {}),
+        }
+    }
+}
+
+pub enum Display {
+    Block,
+    Inline,
+    Flex,
+    Grid,
+    None,
+}
+
+impl ToString for Display {
+    fn to_string(&self) -> String {
+        match self {
+            Display::Block => "block".to_string(),
+            Display::Inline => "inline".to_string(),
+            Display::Flex => "flex".to_string(),
+            Display::Grid => "grid".to_string(),
+            Display::None => "none".to_string(),
+        }
+    }
+}
+
+impl FromStr for Display {
+    type Err = CssValueParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "block" => Ok(Display::Block),
+            "inline" => Ok(Display::Inline),
+            "flex" => Ok(Display::Flex),
+            "grid" => Ok(Display::Grid),
+            "none" => Ok(Display::None),
+            _ => Err(CssValueParseError {}),
+        }
+    }
+}
+
+pub enum FlexDirection {
+    Row,
+    RowReverse,
+    Column,
+    ColumnReverse,
+}
+
+impl ToString for FlexDirection {
+    fn to_string(&self) -> String {
+        match self {
+            FlexDirection::Row => "row".to_string(),
+            FlexDirection::RowReverse => "row-reverse".to_string(),
+            FlexDirection::Column => "column".to_string(),
+            FlexDirection::ColumnReverse => "column-reverse".to_string(),
+        }
+    }
+}
+
+impl FromStr for FlexDirection {
+    type Err = CssValueParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "row" => Ok(FlexDirection::Row),
+            "row-reverse" => Ok(FlexDirection::RowReverse),
+            "column" => Ok(FlexDirection::Column),
+            "column-reverse" => Ok(FlexDirection::ColumnReverse),
+            _ => Err(CssValueParseError {}),
         }
     }
 }

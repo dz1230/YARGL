@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use tl::VDom;
 
-use crate::context::Context;
+use crate::{context::Context, css, layout};
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -13,9 +13,12 @@ pub struct WindowCreationOptions {
 pub struct Window<'a, 'f, 'ff> {
     ctx: Rc<Context<'f, 'ff>>,
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
+    width: u32,
+    height: u32,
     vdom: VDom<'a>,
-    all_styles: Vec<Rc<crate::css::Style>>,
-    computed_styles: HashMap<tl::NodeHandle, crate::css::ComputedStyle>,
+    all_styles: Vec<Rc<css::Style>>,
+    computed_styles: HashMap<tl::NodeHandle, css::ComputedStyle>,
+    computed_layouts: HashMap<tl::NodeHandle, layout::NodeLayoutInfo>
 }
 
 impl Window<'_, '_, '_> {
@@ -129,12 +132,25 @@ impl Window<'_, '_, '_> {
         let mut w = Window {
             ctx: ctx.clone(),
             sdl_canvas: canvas,
+            width: options.width,
+            height: options.height,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
             all_styles: Vec::new(),
             computed_styles: HashMap::new(),
+            computed_layouts: HashMap::new(),
         };
         w.compute_styles(html_filename);
         w
+    }
+
+    /// Calculates layout information for the whole document.
+    pub fn layout(&mut self) {
+        let all_handles = self.get_all_handles(self.vdom.children());
+        for node_handle in all_handles {
+            self.layout_element(&node_handle, None);
+        }
+        // TODO calculate positions
+        // TODO calculate masks and overflow
     }
 
     pub fn draw(&mut self) {
@@ -152,8 +168,66 @@ impl Window<'_, '_, '_> {
         self.sdl_canvas.present();
     }
 
+    /// Calculate the pixel value for the given unit value, if it is either fixed or depends on the parent. Otherwise returns None (i.e. for fit-content).
+    /// - Which [usize]: One of layout::X, layout::Y, layout::WIDTH, layout::HEIGHT, layout::FONT_SIZE.
+    /// - value [Option<f32>]: Size value.
+    /// - unit [Option<css::Unit>]: Unit of the size value.
+    /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
+    fn calc_size_top_down<const WHICH: usize>(&self, value: Option<f32>, unit: Option<css::Unit>, node_handle: &tl::NodeHandle, parent_handle: Option<&tl::NodeHandle>) -> Option<i32> {
+        // magic numbers from https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units
+        match unit {
+            Some(css::Unit::Px) => Some(value.unwrap_or(0.0) as i32),
+            Some(css::Unit::Vw) => Some((value.unwrap_or(0.0) * (self.width as f32) / 100.0) as i32),
+            Some(css::Unit::Vh) => Some((value.unwrap_or(0.0) * (self.height as f32) / 100.0) as i32),
+            Some(css::Unit::Vmin) => Some((value.unwrap_or(0.0) * (self.width.min(self.height) as f32) / 100.0) as i32),
+            Some(css::Unit::Vmax) => Some((value.unwrap_or(0.0) * (self.width.max(self.height) as f32) / 100.0) as i32),
+            Some(css::Unit::Cm) => Some((value.unwrap_or(0.0) * 37.79527559055118) as i32),
+            Some(css::Unit::Mm) => Some((value.unwrap_or(0.0) * 3.779527559055118) as i32),
+            Some(css::Unit::Q) => Some((value.unwrap_or(0.0) * 0.9448818897637795) as i32),
+            Some(css::Unit::In) => Some((value.unwrap_or(0.0) * 96.0) as i32),
+            Some(css::Unit::Pt) => Some((value.unwrap_or(0.0) * 1.3333333333333333) as i32),
+            Some(css::Unit::Pc) => Some((value.unwrap_or(0.0) * 16.0) as i32),
+            Some(css::Unit::Percent) => parent_handle
+                .map_or(None, |p| self.computed_layouts.get(p))
+                .map_or(None, |l| Some(l.get::<{WHICH}>()))
+                .map_or(None, |v| v)
+                .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32) / 100.0) as i32)),
+            Some(css::Unit::Em) => match WHICH {
+                layout::FONT_SIZE => parent_handle
+                    .map_or(None, |p| self.computed_styles.get(p))
+                    .map_or(None, |s| s.get_value::<f32>("font-size").0)
+                    .map_or(None, |v| Some((value.unwrap_or(0.0) * v) as i32)),
+                _ => self.computed_styles.get(node_handle)
+                    .map_or(None, |s| s.get_value::<f32>("font-size").0)
+                    .map_or(None, |v| Some((value.unwrap_or(0.0) * v) as i32))
+            },
+            _ => None
+        }
+    }
+
+    /// Recursively determines width and height of nodes. Does not determine masks and text alignment, wrapping etc.
+    fn layout_element(&mut self, node_handle: &tl::NodeHandle, parent_handle: Option<&tl::NodeHandle>) {
+        if !self.computed_layouts.contains_key(node_handle) {
+            self.computed_layouts.insert(node_handle.clone(), layout::NodeLayoutInfo::new());
+        }
+        // TODO parse style into layout info
+        if let Some(style) = self.computed_styles.get(node_handle) {
+            // TODO top down box model (width, height, padding, border)
+            // TODO check for flex, none, block, inline, inline-block, etc
+            let (width, width_unit) = style.get_value::<f32>("width");
+            let px_width = self.calc_size_top_down::<{layout::WIDTH}>(width, width_unit, node_handle, parent_handle);
+            self.computed_layouts.get_mut(node_handle).and_then(|l| Some(l.set::<{layout::WIDTH}>(px_width)));
+            // TODO check position, left, right, top, bottom properties
+            // TODO children layouts
+            // TODO bottom up box model (fit-content, auto, margin)
+        } else {
+            self.computed_layouts.insert(node_handle.clone(), layout::NodeLayoutInfo::new());
+        }
+    }
+
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
     fn draw_element(&mut self, node_handle: &tl::NodeHandle) {
+        // TODO use layout info to draw
         let node = node_handle.get(self.vdom.parser()).unwrap();
         let style = self.computed_styles.get(node_handle);
         if style.is_some() {
