@@ -103,6 +103,7 @@ impl FromStr for BoxSizing {
 
 pub enum Display {
     Block,
+    InlineBlock,
     Inline,
     Flex,
     Grid,
@@ -113,6 +114,7 @@ impl ToString for Display {
     fn to_string(&self) -> String {
         match self {
             Display::Block => "block".to_string(),
+            Display::InlineBlock => "inline-block".to_string(),
             Display::Inline => "inline".to_string(),
             Display::Flex => "flex".to_string(),
             Display::Grid => "grid".to_string(),
@@ -127,6 +129,7 @@ impl FromStr for Display {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "block" => Ok(Display::Block),
+            "inline-block" => Ok(Display::InlineBlock),
             "inline" => Ok(Display::Inline),
             "flex" => Ok(Display::Flex),
             "grid" => Ok(Display::Grid),
