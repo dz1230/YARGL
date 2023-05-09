@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc};
 
 use tl::VDom;
 
-use crate::{context::Context, css, layout};
+use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}};
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -18,7 +18,7 @@ pub struct Window<'a, 'f, 'ff> {
     vdom: VDom<'a>,
     all_styles: Vec<Rc<css::Style>>,
     computed_styles: HashMap<tl::NodeHandle, css::ComputedStyle>,
-    computed_layouts: HashMap<tl::NodeHandle, layout::NodeLayoutInfo>
+    computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>
 }
 
 impl Window<'_, '_, '_> {
@@ -143,11 +143,20 @@ impl Window<'_, '_, '_> {
         w
     }
 
+    // TODO support "auto" values in layout
+
     /// Calculates layout information for the whole document.
     pub fn layout(&mut self) {
         let all_handles = self.get_all_handles(self.vdom.children());
-        for node_handle in all_handles {
-            self.layout_element(&node_handle, None);
+        for node_handle in all_handles.iter() {
+            self.layout_element_top_down(&node_handle, None);
+        }
+        // let mut flow = sdl2::rect::Point::new(0, 0);
+        // for node_handle in all_handles.iter() {
+        //     self.layout_position(&mut flow, node_handle);
+        // }
+        for node_handle in all_handles.iter().rev() {
+            self.layout_element_bottom_up(&node_handle);
         }
         // TODO calculate positions
         // TODO calculate masks and overflow
@@ -192,8 +201,8 @@ impl Window<'_, '_, '_> {
                 .map_or(None, |l| Some(l.get::<{WHICH}>()))
                 .map_or(None, |v| v)
                 .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32) / 100.0) as i32)),
-            Some(css::Unit::Em) => match WHICH {
-                layout::FONT_SIZE => parent_handle
+            Some(css::Unit::Em) => match LayoutValue::from(WHICH) {
+                LayoutValue::FontSize => parent_handle
                     .map_or(None, |p| self.computed_styles.get(p))
                     .map_or(None, |s| s.get_value::<f32>("font-size").0)
                     .map_or(None, |v| Some((value.unwrap_or(0.0) * v) as i32)),
@@ -205,24 +214,88 @@ impl Window<'_, '_, '_> {
         }
     }
 
-    /// Recursively determines width and height of nodes. Does not determine masks and text alignment, wrapping etc.
-    fn layout_element(&mut self, node_handle: &tl::NodeHandle, parent_handle: Option<&tl::NodeHandle>) {
+    fn calc_size_bottom_up<const WHICH: usize>(&self, property: &str, node_handle: &tl::NodeHandle) -> Option<i32> {
+        self.computed_styles.get(node_handle)
+            .map_or(None, |style| style.get_value::<String>(property).0)
+            .map_or(None, |identifier| match identifier.as_str() {
+                "fit-content" => {
+                    return None;
+                    // TODO figure out how to calculate content size, with positions
+                    // node_handle.get(self.vdom.parser())
+                    // .map_or(None, |node| node.children())
+                    // .map_or(None, |children| {
+                    //     let mut size_value = 0;
+                    //     for child_handle in children.top().iter() {
+                    //         if let Some(child_layout) = self.computed_layouts.get(child_handle) {
+                    //             if let Some(child_size_value) = child_layout.get::<{WHICH}>() {
+                    //                 size_value += child_size_value;
+                    //             }
+                    //         }
+                    //     }
+                    //     return Some(size_value);
+                    // })
+                },
+                _ => None
+            })
+    }
+
+    /// Attempts to calculate an element's padding values.
+    fn layout_element_padding(&mut self, node_handle: &tl::NodeHandle) {
+
+    }
+
+    /// Determines width and height if they are based on the parent, or fixed.
+    fn layout_element_top_down(&mut self, node_handle: &tl::NodeHandle, parent_handle: Option<&tl::NodeHandle>) {
         if !self.computed_layouts.contains_key(node_handle) {
-            self.computed_layouts.insert(node_handle.clone(), layout::NodeLayoutInfo::new());
+            self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
         }
-        // TODO parse style into layout info
         if let Some(style) = self.computed_styles.get(node_handle) {
-            // TODO top down box model (width, height, padding, border)
+            let (display, _) = style.get_value::<css::Display>("display");
+            match display {
+                Some(css::Display::None) => {
+                    if let Some(node_layout) = self.computed_layouts.get_mut(node_handle) {
+                        node_layout.set::<{LayoutValue::Width as usize}>(Some(0));
+                        node_layout.set::<{LayoutValue::Height as usize}>(Some(0));
+                    }
+                },
+                Some(css::Display::Block) | Some(css::Display::InlineBlock) => {
+                    let (width, width_unit) = style.get_value::<f32>("width");
+                    let px_width = self.calc_size_top_down::<{LayoutValue::Width as usize}>(width, width_unit, node_handle, parent_handle);
+                    let (height, height_unit) = style.get_value::<f32>("height");
+                    let px_height = self.calc_size_top_down::<{LayoutValue::Height as usize}>(height, height_unit, node_handle, parent_handle);
+                    if let Some(node_layout) = self.computed_layouts.get_mut(node_handle) {
+                        node_layout.set::<{LayoutValue::Width as usize}>(px_width);
+                        node_layout.set::<{LayoutValue::Width as usize}>(px_height);
+                    }
+                },
+                Some(css::Display::Flex) => {
+                    // TODO implement flex layoutg
+                },
+                Some(css::Display::Grid) => {
+                    // TODO implement grid layout
+                },
+                _ => {}
+            }
+            
             // TODO check for flex, none, block, inline, inline-block, etc
-            let (width, width_unit) = style.get_value::<f32>("width");
-            let px_width = self.calc_size_top_down::<{layout::WIDTH}>(width, width_unit, node_handle, parent_handle);
-            self.computed_layouts.get_mut(node_handle).and_then(|l| Some(l.set::<{layout::WIDTH}>(px_width)));
-            // TODO check position, left, right, top, bottom properties
-            // TODO children layouts
-            // TODO bottom up box model (fit-content, auto, margin)
+            
         } else {
-            self.computed_layouts.insert(node_handle.clone(), layout::NodeLayoutInfo::new());
+            self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
         }
+    }
+    
+    fn layout_element_bottom_up(&mut self, node_handle: &tl::NodeHandle) {
+        // TODO bottom up box model (fit-content, auto, margin)
+
+    }
+
+    fn layout_position(&mut self, flow: &mut sdl2::rect::Point, node_handle: &tl::NodeHandle) {
+        // TODO calculate x and y positions based on document flow + width, height, margins, etc
+        
+    }
+
+    fn layout_mask(&mut self, node_handle: &tl::NodeHandle) {
+        // TODO calculate masks and add scrollbars
     }
 
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.

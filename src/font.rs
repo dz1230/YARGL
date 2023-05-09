@@ -91,18 +91,12 @@ impl<'a> Font<'a> {
     }
 
     pub fn render<Target: sdl2::render::RenderTarget>(&self, canvas: & mut Canvas<Target>, text: &str) {
-        match self.face() {
-            None => {
-                println!("No face found for index {}", self.used_index);
-                return
-            },
-            Some(face) => {
-                let mut builder = TextCanvasBuilder::new(canvas);
-                for c in text.chars() {
-                    if let Some(glyph_id) = face.glyph_index(c) {
-                        let _bbox = face.outline_glyph(glyph_id, &mut builder);
-                        builder.x += face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
-                    }
+        if let Some(face) = self.face() {
+            let mut builder = TextCanvasBuilder::new(canvas);
+            for c in text.chars() {
+                if let Some(glyph_id) = face.glyph_index(c) {
+                    let _bbox = face.outline_glyph(glyph_id, &mut builder);
+                    builder.x += face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
                 }
             }
         }

@@ -1,13 +1,5 @@
-
-// these arent in an enum because rust doesnt allow const generics with enums yet (on stable releases)
-
 use std::str::FromStr;
 
-pub const X: usize = 0;
-pub const Y: usize = 1;
-pub const WIDTH: usize = 2;
-pub const HEIGHT: usize = 3;
-pub const FONT_SIZE: usize = 4;
 
 pub struct LayoutErr;
 
@@ -35,6 +27,70 @@ pub enum LayoutValue {
     MaskedY,
     MaskedWidth,
     MaskedHeight,
+    MaxValue
+}
+
+impl Into<usize> for LayoutValue {
+    fn into(self) -> usize {
+        match self {
+            LayoutValue::X => 0,
+            LayoutValue::Y => 1,
+            LayoutValue::Width => 2,
+            LayoutValue::Height => 3,
+            LayoutValue::FontSize => 4,
+            LayoutValue::PaddingTop => 5,
+            LayoutValue::PaddingBottom => 6,
+            LayoutValue::PaddingLeft => 7,
+            LayoutValue::PaddingRight => 8,
+            LayoutValue::BorderTop => 9,
+            LayoutValue::BorderBottom => 10,
+            LayoutValue::BorderLeft => 11,
+            LayoutValue::BorderRight => 12,
+            LayoutValue::MarginTop => 13,
+            LayoutValue::MarginBottom => 14,
+            LayoutValue::MarginLeft => 15,
+            LayoutValue::MarginRight => 16,
+            LayoutValue::ContentWidth => 17,
+            LayoutValue::ContentHeight => 18,
+            LayoutValue::MaskedX => 19,
+            LayoutValue::MaskedY => 20,
+            LayoutValue::MaskedWidth => 21,
+            LayoutValue::MaskedHeight => 22,
+            LayoutValue::MaxValue => 23,
+        }
+    }
+}
+
+impl From<usize> for LayoutValue {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => LayoutValue::X,
+            1 => LayoutValue::Y,
+            2 => LayoutValue::Width,
+            3 => LayoutValue::Height,
+            4 => LayoutValue::FontSize,
+            5 => LayoutValue::PaddingTop,
+            6 => LayoutValue::PaddingBottom,
+            7 => LayoutValue::PaddingLeft,
+            8 => LayoutValue::PaddingRight,
+            9 => LayoutValue::BorderTop,
+            10 => LayoutValue::BorderBottom,
+            11 => LayoutValue::BorderLeft,
+            12 => LayoutValue::BorderRight,
+            13 => LayoutValue::MarginTop,
+            14 => LayoutValue::MarginBottom,
+            15 => LayoutValue::MarginLeft,
+            16 => LayoutValue::MarginRight,
+            17 => LayoutValue::ContentWidth,
+            18 => LayoutValue::ContentHeight,
+            19 => LayoutValue::MaskedX,
+            20 => LayoutValue::MaskedY,
+            21 => LayoutValue::MaskedWidth,
+            22 => LayoutValue::MaskedHeight,
+            23 => LayoutValue::MaxValue,
+            _ => panic!("Invalid layout value"),
+        }
+    }
 }
 
 impl FromStr for LayoutValue {
