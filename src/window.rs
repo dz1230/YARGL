@@ -176,7 +176,7 @@ impl Window<'_, '_, '_> {
         // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
         // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
         // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
-        for (node_handle, parent_handle) in all_handles.iter() {
+        for (node_handle, _parent_handle) in all_handles.iter() {
             self.layout_mask(node_handle);
         }
     }
@@ -190,7 +190,7 @@ impl Window<'_, '_, '_> {
         
         // TODO optimize this (problem see above)
         let all_handles = self.get_all_handles(self.vdom.children(), None);
-        for (node_handle, parent_handle) in all_handles {
+        for (node_handle, _parent_handle) in all_handles {
             self.draw_element(&node_handle);
         }
         self.sdl_canvas.present();
@@ -330,7 +330,7 @@ impl Window<'_, '_, '_> {
         }
     }
     
-    fn layout_element_bottom_up(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+    fn layout_element_bottom_up(&mut self, _node_handle: tl::NodeHandle, _parent_handle: Option<tl::NodeHandle>) {
         // TODO use contentX and contentY of parent to find out X and Y. IMPORTANT: iteration order has to be changed, currently would iterate over the last sibling first. Or just use negative values?
         // TODO for relative positioning, determine width and height based on left, right, top, bottom properties and parent size: 
         // TODO update contentWidth and contentHeight, together with contentX and contentY, of parent_node based on display and contentX, contentY, document flow and own size
@@ -338,7 +338,7 @@ impl Window<'_, '_, '_> {
 
     }
 
-    fn layout_mask(&mut self, node_handle: &tl::NodeHandle) {
+    fn layout_mask(&mut self, _node_handle: &tl::NodeHandle) {
         // TODO convert relative X and Y to absolute X and Y
         // TODO collapse margins
         // TODO calculate masks and add scrollbars
@@ -350,8 +350,8 @@ impl Window<'_, '_, '_> {
             if let Some(style) = self.computed_styles.get(node_handle) {
                 if let Some(layout) = self.computed_layouts.get(node_handle) {
                     println!("Drawing: {:?}", node.as_tag().unwrap().name());
-                    let x = layout.get::<{LayoutValue::X as usize}>();
-                    let y = layout.get::<{LayoutValue::Y as usize}>();
+                    let _x = layout.get::<{LayoutValue::X as usize}>();
+                    let _y = layout.get::<{LayoutValue::Y as usize}>();
                     let width = layout.get::<{LayoutValue::Width as usize}>();
                     let height = layout.get::<{LayoutValue::Height as usize}>();
                     // if x.is_none() || y.is_none() || width.is_none() || height.is_none() {

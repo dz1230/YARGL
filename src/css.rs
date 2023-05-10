@@ -10,7 +10,7 @@ use strum_macros::EnumIter;
 pub struct CssUnitParseError;
 
 /// Unit of a css value.
-#[derive(EnumIter)]
+#[derive(Debug, PartialEq, EnumIter)]
 pub enum Unit {
     Px,
     Pt,
@@ -172,6 +172,19 @@ impl FromStr for FlexDirection {
 }
 
 /// CSS specificity. Used to resolve conflicts between rules.
+/// 
+/// ```
+/// use yargl::css::Specificity;
+/// let a = Specificity { a: 1, b: 0, c: 1 };
+/// let b = Specificity { a: 0, b: 2, c: 0 };
+/// assert!(a > b);
+/// let c = Specificity { a: 0, b: 2, c: 1 };
+/// assert!(a > c);
+/// assert!(c > b);
+/// let d = Specificity { a: 0, b: 2, c: 1 };
+/// assert_eq!(c, d);
+/// assert!(b + d > c);
+/// ```
 #[derive(Clone, PartialEq, Debug)]
 pub struct Specificity {
     pub a: u32,
@@ -228,7 +241,8 @@ impl Specificity {
     }
 }
 
-#[derive(Clone, Debug)]
+/// A CSS selector.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Selector {
     pub tag_name: Option<String>,
     pub class_list: Vec<String>,
@@ -269,6 +283,16 @@ impl Selector {
     }
     
     /// Returns the specificity of this selector.
+    /// 
+    /// ```
+    /// use yargl::css::{Selector, Specificity};
+    /// let a = Selector::new(None, vec!["a".to_string(), "b".to_string()], None);
+    /// assert_eq!(a.specificity(), Specificity::new(0, 2, 0));
+    /// let b = Selector::new(Some("div".to_string()), vec!["a".to_string(), "b".to_string()], None);
+    /// assert_eq!(b.specificity(), Specificity::new(0, 2, 1));
+    /// let c = Selector::new(Some("div".to_string()), vec!["a".to_string(), "b".to_string()], Some("c".to_string()));
+    /// assert_eq!(c.specificity(), Specificity::new(1, 2, 1));
+    /// ```
     pub fn specificity(&self) -> Specificity {
         let mut specificity = Specificity::new(0, 0, 0);
         if self.id.is_some() {
@@ -302,6 +326,23 @@ impl Selector {
 }
 
 impl ToString for Selector {
+    /// Returns a string representation of this selector (valid CSS).
+    /// 
+    /// ```
+    /// use yargl::css::Selector;
+    /// let a = Selector::new(None, vec!["a".to_string(), "b".to_string()], None);
+    /// let a_str = a.to_string();
+    /// assert_eq!(a_str, ".a.b");
+    /// let b = Selector::new(Some("div".to_string()), vec!["a".to_string(), "b".to_string()], None);
+    /// let b_str = b.to_string();
+    /// assert_eq!(b_str, "div.a.b");
+    /// let c = Selector::new(Some("div".to_string()), vec!["a".to_string(), "b".to_string()], Some("c".to_string()));
+    /// let c_str = c.to_string();
+    /// assert_eq!(c_str, "div.a.b#c");
+    /// let d = Selector::new(None, vec![], None);
+    /// let d_str = d.to_string();
+    /// assert_eq!(d_str, "");
+    /// ```
     fn to_string(&self) -> String {
         let mut selector = String::new();
         if self.tag_name.is_some() {
@@ -320,14 +361,29 @@ impl ToString for Selector {
 }
 
 /// An error which occured while parsing a Color from a string.
+#[derive(Debug)]
 pub struct CssColorParseError;
 
+/// Use this type to retrieve colors from styles.
 #[derive(Debug)]
 pub struct CssColor {
     pub sdl_color: sdl2::pixels::Color,
 }
 
 impl FromStr for CssColor {
+    /// Parses a color from a CSS color value. Only hex colors (no shorthand formats) are supported (yet).
+    /// ```
+    /// use yargl::css::CssColor;
+    /// use std::str::FromStr;
+    /// let color = CssColor::from_str("#ff00ff").unwrap();
+    /// assert_eq!(color.sdl_color, sdl2::pixels::Color::RGB(255, 0, 255));
+    /// let color = CssColor::from_str("#000000").unwrap();
+    /// assert_eq!(color.sdl_color, sdl2::pixels::Color::RGB(0, 0, 0));
+    /// let color = CssColor::from_str("#ffffff").unwrap();
+    /// assert_eq!(color.sdl_color, sdl2::pixels::Color::RGB(255, 255, 255));
+    /// let color = CssColor::from_str("#fa017f").unwrap();
+    /// assert_eq!(color.sdl_color, sdl2::pixels::Color::RGB(250, 1, 127));
+    /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut chars = s.chars();
         if chars.next() == Some('#') {
@@ -363,6 +419,35 @@ pub struct Style {
 impl Style {
     /// Returns the value of the given property, with a unit if it has one.
     /// For supported units, see [Unit].
+    /// ```
+    /// use yargl::css::{Style, Unit, parse_css, CssColor};
+    /// use std::vec::Vec;
+    /// use std::collections::HashMap;
+    /// let mut styles = parse_css("div { width: 100px; font-size: 20px; height: 100%; color: #ff0000; }");
+    /// let mut style = styles.remove(0);
+    /// let (width, unit) = style.get_value::<f32>("width");
+    /// assert!(width.is_some());
+    /// assert!(unit.is_some());
+    /// assert_eq!(width.unwrap(), 100.0);
+    /// assert_eq!(unit.unwrap(), Unit::Px);
+    /// let (font_size, unit) = style.get_value::<f32>("font-size");
+    /// assert!(font_size.is_some());
+    /// assert!(unit.is_some());
+    /// assert_eq!(font_size.unwrap(), 20.0);
+    /// assert_eq!(unit.unwrap(), Unit::Px);
+    /// let (height, unit) = style.get_value::<f32>("height");
+    /// assert!(height.is_some());
+    /// assert!(unit.is_some());
+    /// assert_eq!(height.unwrap(), 100.0);
+    /// assert_eq!(unit.unwrap(), Unit::Percent);
+    /// let (margin, unit) = style.get_value::<f32>("margin-top");
+    /// assert!(margin.is_none());
+    /// assert!(unit.is_none());
+    /// let (color, unit) = style.get_value::<CssColor>("color");
+    /// assert!(color.is_some());
+    /// assert!(unit.is_none());
+    /// assert_eq!(color.unwrap().sdl_color, sdl2::pixels::Color::RGB(255, 0, 0));
+    /// ```
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
         let value = self.properties.get(property);
         if value.is_none() {
@@ -397,6 +482,21 @@ impl Style {
         return false;
     }
     /// Returns the matching selector with the highest specificity, or None if no selector matches.
+    /// ```
+    /// use yargl::css::{Style, parse_css, Selector};
+    /// use std::vec::Vec;
+    /// use std::collections::HashMap;
+    /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; }");
+    /// let mut style = styles.remove(0);
+    /// let selector1 = style.get_matching_selector_with_highest_specificity(&None, &vec!["a".to_string(), "c".to_string()], &None, None);
+    /// assert!(selector1.is_some());
+    /// assert_eq!(selector1.unwrap(), Selector { tag_name: "div", class_list: vec!["a".to_string()], id: None });
+    /// let selector2 = style.get_matching_selector_with_highest_specificity(&Some("div".to_string()), &vec!["c".to_string()], &Some("b".to_string()), None);
+    /// assert!(selector2.is_some());
+    /// assert_eq!(selector2.unwrap(), Selector { tag_name: None, class_list: vec![], id: Some("b".to_string()) });
+    /// let selector3 = style.get_matching_selector_with_highest_specificity(&Some("p".to_string()), &vec!["x".to_string()], &None, None);
+    /// assert!(selector3.is_none());
+    /// ```
     pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node: Option<&tl::Node>) -> Option<&Selector> {
         let mut selected_selector: Option<&Selector> = None;
         for selector in &self.selectors {
@@ -457,6 +557,23 @@ impl ComputedStyle {
         }
     }
 
+    /// Applies the given style to this computed style, if it has a higher specificity.
+    /// 
+    /// ```
+    /// use yargl::css::{Style, parse_css, Selector, ComputedStyle, Unit};
+    /// use std::vec::Vec;
+    /// use std::collections::HashMap;
+    /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; } div.a#d { width: 200px; }");
+    /// let mut style1 = styles.remove(0);
+    /// let mut style2 = styles.remove(0);
+    /// let mut computed_style = ComputedStyle::new(Selector { tag_name: Some("div".to_string()), class_list: vec!["a".to_string()], id: Some("d".to_string()) });
+    /// computed_style.apply_style(style1, None);
+    /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(100.0), Some(Unit::Px)));
+    /// assert_eq!(computed_style.get_value::<f32>("font-size"), (Some(20.0), Some(Unit::Px)));
+    /// assert_eq!(computed_style.get_value::<f32>("height"), (Some(100.0), Some(Unit::Percent)));
+    /// computed_style.apply_style(style2, None);
+    /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(200.0), Some(Unit::Px)));
+    /// ```
     pub fn apply_style(&mut self, style: Rc<Style>, node: Option<&tl::Node>) {
         match style.get_matching_selector_with_highest_specificity(&self.selector.tag_name, &self.selector.class_list, &self.selector.id, node) {
             Some(selected_selector) => {
