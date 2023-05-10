@@ -449,6 +449,8 @@ impl ComputedStyle {
     }
 
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
+        println!("Getting value for property {}", property);
+        println!("Found: {:?}", self.properties.get(property));
         match self.properties.get(property) {
             Some(property_style) => property_style.get_value(property),
             None => (None, None)

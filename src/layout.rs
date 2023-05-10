@@ -160,6 +160,7 @@ impl ToString for LayoutValue {
     }
 }
 
+#[derive(Debug)]
 pub struct  NodeLayoutInfo {
     values: Vec<Option<i32>>,
 }
