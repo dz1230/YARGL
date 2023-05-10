@@ -27,6 +27,7 @@ mod tests {
         let html_filename = "res/html/test_1.html";
         let html = std::fs::read_to_string(html_filename).unwrap();
         let mut _window = Window::new(ctx.clone(), &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename));
+        _window.layout();
         _window.draw();
         loop {
             match ctx.poll_events() {

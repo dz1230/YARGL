@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-
 pub struct LayoutErr;
 
 pub enum LayoutValue {
@@ -27,6 +26,10 @@ pub enum LayoutValue {
     MaskedY,
     MaskedWidth,
     MaskedHeight,
+    BorderTopLeftRadius,
+    BorderTopRightRadius,
+    BorderBottomLeftRadius,
+    BorderBottomRightRadius,
     MaxValue
 }
 
@@ -56,7 +59,11 @@ impl Into<usize> for LayoutValue {
             LayoutValue::MaskedY => 20,
             LayoutValue::MaskedWidth => 21,
             LayoutValue::MaskedHeight => 22,
-            LayoutValue::MaxValue => 23,
+            LayoutValue::BorderTopLeftRadius => 23,
+            LayoutValue::BorderTopRightRadius => 24,
+            LayoutValue::BorderBottomLeftRadius => 25,
+            LayoutValue::BorderBottomRightRadius => 26,
+            LayoutValue::MaxValue => 27,
         }
     }
 }
@@ -87,7 +94,11 @@ impl From<usize> for LayoutValue {
             20 => LayoutValue::MaskedY,
             21 => LayoutValue::MaskedWidth,
             22 => LayoutValue::MaskedHeight,
-            23 => LayoutValue::MaxValue,
+            23 => LayoutValue::BorderTopLeftRadius,
+            24 => LayoutValue::BorderTopRightRadius,
+            25 => LayoutValue::BorderBottomLeftRadius,
+            26 => LayoutValue::BorderBottomRightRadius,
+            27 => LayoutValue::MaxValue,
             _ => panic!("Invalid layout value"),
         }
     }
@@ -98,8 +109,6 @@ impl FromStr for LayoutValue {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "x" => Ok(LayoutValue::X),
-            "y" => Ok(LayoutValue::Y),
             "width" => Ok(LayoutValue::Width),
             "height" => Ok(LayoutValue::Height),
             "font-size" => Ok(LayoutValue::FontSize),
@@ -115,13 +124,38 @@ impl FromStr for LayoutValue {
             "margin-bottom" => Ok(LayoutValue::MarginBottom),
             "margin-left" => Ok(LayoutValue::MarginLeft),
             "margin-right" => Ok(LayoutValue::MarginRight),
-            "content-width" => Ok(LayoutValue::ContentWidth),
-            "content-height" => Ok(LayoutValue::ContentHeight),
-            "masked-x" => Ok(LayoutValue::MaskedX),
-            "masked-y" => Ok(LayoutValue::MaskedY),
-            "masked-width" => Ok(LayoutValue::MaskedWidth),
-            "masked-height" => Ok(LayoutValue::MaskedHeight),
+            "border-top-left-radius" => Ok(LayoutValue::BorderTopLeftRadius),
+            "border-top-right-radius" => Ok(LayoutValue::BorderTopRightRadius),
+            "border-bottom-left-radius" => Ok(LayoutValue::BorderBottomLeftRadius),
+            "border-bottom-right-radius" => Ok(LayoutValue::BorderBottomRightRadius),
             _ => Err(LayoutErr),
+        }
+    }
+}
+
+impl ToString for LayoutValue {
+    fn to_string(&self) -> String {
+        match self {
+            LayoutValue::Width => "width".to_string(),
+            LayoutValue::Height => "height".to_string(),
+            LayoutValue::FontSize => "font-size".to_string(),
+            LayoutValue::PaddingTop => "padding-top".to_string(),
+            LayoutValue::PaddingBottom => "padding-bottom".to_string(),
+            LayoutValue::PaddingLeft => "padding-left".to_string(),
+            LayoutValue::PaddingRight => "padding-right".to_string(),
+            LayoutValue::BorderTopWidth => "border-top-width".to_string(),
+            LayoutValue::BorderBottomWidth => "border-bottom-width".to_string(),
+            LayoutValue::BorderLeftWidth => "border-left-width".to_string(),
+            LayoutValue::BorderRightWidth => "border-right-width".to_string(),
+            LayoutValue::MarginTop => "margin-top".to_string(),
+            LayoutValue::MarginBottom => "margin-bottom".to_string(),
+            LayoutValue::MarginLeft => "margin-left".to_string(),
+            LayoutValue::MarginRight => "margin-right".to_string(),
+            LayoutValue::BorderTopLeftRadius => "border-top-left-radius".to_string(),
+            LayoutValue::BorderTopRightRadius => "border-top-right-radius".to_string(),
+            LayoutValue::BorderBottomLeftRadius => "border-bottom-left-radius".to_string(),
+            LayoutValue::BorderBottomRightRadius => "border-bottom-right-radius".to_string(),
+            _ => panic!("Invalid layout value"),
         }
     }
 }
