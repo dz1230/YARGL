@@ -79,7 +79,6 @@ impl<'a> Font<'a> {
         };
         for index in min..max {
             if let Ok(face) = ttf_parser::Face::parse(data, index) {
-                println!("Loaded face {}: {:?}", index, face);
                 font.faces.insert(index, face);
             }
         }
