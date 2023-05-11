@@ -156,15 +156,6 @@ impl Window<'_, '_, '_> {
             self.layout_element_padding(*node_handle);
             self.layout_element_border(*node_handle);
             self.layout_element_margin(*node_handle);
-            if let Some(layout) = self.computed_layouts.get(node_handle) {
-                if let Some(style) = self.computed_styles.get(node_handle) {
-                    if let Some(node) = node_handle.get(self.vdom.parser()) {
-                        if let Some(tag) = node.as_tag() {
-                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style);
-                        }
-                    }
-                }
-            }
         }
         for (node_handle, parent_handle) in all_handles.iter().rev() {
             // Second attempt to calculate boxes. 
@@ -181,6 +172,15 @@ impl Window<'_, '_, '_> {
         // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
         for (node_handle, parent_handle) in all_handles.iter() {
             self.layout_mask_top_down(*node_handle, *parent_handle);
+            if let Some(layout) = self.computed_layouts.get(node_handle) {
+                if let Some(style) = self.computed_styles.get(node_handle) {
+                    if let Some(node) = node_handle.get(self.vdom.parser()) {
+                        if let Some(tag) = node.as_tag() {
+                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -468,6 +468,7 @@ impl Window<'_, '_, '_> {
 
     /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
     fn layout_mask_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        // TODO doesnt seem to work properly at all, redo all of this
         let mut parent_content_width = 0;
         let mut parent_content_height = 0;
         let mut parent_x = 0;
@@ -493,6 +494,7 @@ impl Window<'_, '_, '_> {
             own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
         }
         if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+            // TODO adding content_width here might result in a wrong value for siblings of block elements, which reset the content X and therefore the X of this element
             own_x += parent_x + parent_content_width;
             own_y += parent_y + parent_content_height;
             layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
@@ -573,12 +575,11 @@ impl Window<'_, '_, '_> {
                     }
                     // TODO layout text properly
                     // Draw text
-                    println!("Drawing text");
                     let text = node.inner_text(self.vdom.parser()).to_string();
                     let (font_family_opt, _) = style.get_value::<String>("font-family");
                     let (font_color_opt, _) = style.get_value::<css::CssColor>("color");
-                    println!("Font: {:?} {:?}", font_family_opt, font_color_opt);
                     if font_family_opt.is_some() && font_color_opt.is_some() {
+                        println!("Drawing text");
                         let font_family = font_family_opt.unwrap();
                         let font_color = font_color_opt.unwrap();
                         println!("Font: {:?} {:?}", font_family, font_color);
