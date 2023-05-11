@@ -549,6 +549,7 @@ impl Window<'_, '_, '_> {
         if let Some(node) = node_handle.get(self.vdom.parser()) {
             if let Some(style) = self.computed_styles.get(node_handle) {
                 if let Some(layout) = self.computed_layouts.get(node_handle) {
+                    // TODO use masked layout values
                     println!("Drawing: {:?}", node.as_tag().unwrap().name());
                     let _x = layout.get::<{LayoutValue::X as usize}>();
                     let _y = layout.get::<{LayoutValue::Y as usize}>();
@@ -570,6 +571,7 @@ impl Window<'_, '_, '_> {
                             Err(e) => println!("Error drawing rect: {:?}", e)
                         }
                     }
+                    // TODO layout text properly
                     // Draw text
                     println!("Drawing text");
                     let text = node.inner_text(self.vdom.parser()).to_string();
