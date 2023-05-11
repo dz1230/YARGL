@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::{HashMap, HashSet}, rc::Rc};
 
 use tl::VDom;
 
@@ -147,6 +147,9 @@ impl Window<'_, '_, '_> {
     pub fn layout(&mut self) {
         let all_handles = self.get_all_handles(self.vdom.children(), None);
         for (node_handle, parent_handle) in all_handles.iter() {
+            if !self.computed_layouts.contains_key(&node_handle) {
+                self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
+            }
             self.layout_element_font_size(*node_handle, *parent_handle);
             // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
             self.layout_element_top_down(*node_handle, *parent_handle);
@@ -157,7 +160,7 @@ impl Window<'_, '_, '_> {
                 if let Some(style) = self.computed_styles.get(node_handle) {
                     if let Some(node) = node_handle.get(self.vdom.parser()) {
                         if let Some(tag) = node.as_tag() {
-                            println!("{:?}: {:?} {:?}", tag.name(), layout, style);
+                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style);
                         }
                     }
                 }
@@ -254,7 +257,6 @@ impl Window<'_, '_, '_> {
         if let Some(style) = self.computed_styles.get(&node_handle) {
             let (value, unit) = style.get_value::<f32>(LayoutValue::from(WHICH).to_string().as_str());
             let value = self.calc_size_top_down::<{WHICH}>(value, unit, node_handle, relative_handle);
-            println!("Parsed value: {:?} for {:?}", value, LayoutValue::from(WHICH).to_string());
             self.computed_layouts.get_mut(&node_handle).map(|l| l.set::<{WHICH}>(value));
         }
     }
@@ -294,9 +296,6 @@ impl Window<'_, '_, '_> {
 
     /// Determines width and height if they are based on the parent, or fixed.
     fn layout_element_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
-        if !self.computed_layouts.contains_key(&node_handle) {
-            self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
-        }
         if let Some(style) = self.computed_styles.get(&node_handle) {
             // println!("layout_element_top_down: {:?} style {:?}", node_handle, style);
             let (display, _) = style.get_value::<css::Display>("display");
@@ -329,19 +328,148 @@ impl Window<'_, '_, '_> {
             self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
         }
     }
-    
-    fn layout_element_bottom_up(&mut self, _node_handle: tl::NodeHandle, _parent_handle: Option<tl::NodeHandle>) {
-        // TODO use contentX and contentY of parent to find out X and Y. IMPORTANT: iteration order has to be changed, currently would iterate over the last sibling first. Or just use negative values?
-        // TODO for relative positioning, determine width and height based on left, right, top, bottom properties and parent size: 
-        // TODO update contentWidth and contentHeight, together with contentX and contentY, of parent_node based on display and contentX, contentY, document flow and own size
-        // TODO bottom up width + height (inline, fit-content, min-content, max-content, auto) (use contentWidth, contentHeight)
-
+     
+    /// Determines width and height if they are based on the content. 
+    fn layout_element_bottom_up(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        // TODO use paddings, margins, borders in content size calculation
+        if let Some(node) = node_handle.get(self.vdom.parser()) {
+            if let Some(style) = self.computed_styles.get(&node_handle) {
+                let (display, _) = style.get_value::<css::Display>("display");
+                match display {
+                    Some(css::Display::Inline) => {
+                        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+                            let text_content = match node {
+                                tl::Node::Tag(tag) => tag.inner_text(self.vdom.parser()).to_string(),
+                                tl::Node::Raw(text) => text.try_as_utf8_str().map_or("".to_string(), |s| s.to_string()),
+                                _ => "".to_string()
+                            };
+                            if text_content.len() > 0 {
+                                let (font_family_opt, _) = style.get_value::<String>("font-family");
+                                if let Some(font_family) = font_family_opt {
+                                    if let Some(font_size) = layout.get::<{LayoutValue::FontSize as usize}>() {
+                                        let mut parent_x = 0;
+                                        let mut parent_y = 0;
+                                        let mut parent_width: Option<i32> = None;
+                                        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                                            parent_x = parent_layout.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
+                                            parent_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
+                                            parent_width = parent_layout.get::<{LayoutValue::Width as usize}>();
+                                        }
+                                        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                            layout_mut.set::<{LayoutValue::X as usize}>(Some(parent_x));
+                                            layout_mut.set::<{LayoutValue::Y as usize}>(Some(parent_y));
+                                        }
+                                        for font_name in font_family.split(',') {
+                                            let font_name = font_name.trim();
+                                            if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
+                                                let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
+                                                let (text_width, text_height, new_content_x) = font.text_dimensions(text_content.as_str(), font_size, -parent_x, parent_width, &breakable);
+                                                if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                                    layout_mut.set::<{LayoutValue::Width as usize}>(Some(text_width));
+                                                    layout_mut.set::<{LayoutValue::Height as usize}>(Some(text_height));
+                                                }
+                                                if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get_mut(&p)) {
+                                                    // content x and y is negative because the last child is computed first. In the end the values are offset by contentWidth and contentHeight which should get to 0,0
+                                                    parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(-new_content_x));
+                                                    parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(parent_y - text_height));
+                                                    match parent_layout_mut.get::<{LayoutValue::ContentWidth as usize}>() {
+                                                        Some(parent_content_width) => {
+                                                            if parent_content_width < text_width {
+                                                                parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(text_width));
+                                                            }
+                                                        },
+                                                        None => {
+                                                            parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(text_width));
+                                                        }
+                                                    }
+                                                    match parent_layout_mut.get::<{LayoutValue::ContentHeight as usize}>() {
+                                                        Some(parent_content_height) => {
+                                                            parent_layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(parent_content_height + text_height));
+                                                        },
+                                                        None => {
+                                                            parent_layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(text_height));
+                                                        }
+                                                    }
+                                                }
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    Some(css::Display::Block | css::Display::InlineBlock) => {
+                        // calculates width and height based on content, if not set already
+                        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+                            if layout.get::<{LayoutValue::Width as usize}>().is_none() {
+                                if let Some(content_width) = layout.get::<{LayoutValue::ContentWidth as usize}>() {
+                                    if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                        layout_mut.set::<{LayoutValue::Width as usize}>(Some(content_width));
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+                            if layout.get::<{LayoutValue::Height as usize}>().is_none() {
+                                if let Some(content_height) = layout.get::<{LayoutValue::ContentHeight as usize}>() {
+                                    if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                        layout_mut.set::<{LayoutValue::Height as usize}>(Some(content_height));
+                                    }
+                                }
+                            }
+                        }
+                        // get x and y from parent, and update parents contentX and contentY and contentWidth and contentHeight
+                        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                            layout_mut.set::<{LayoutValue::X as usize}>(Some(0));
+                        }
+                        let mut content_y = 0;
+                        if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                            content_y = parent_layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
+                        }
+                        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                            layout_mut.set::<{LayoutValue::Y as usize}>(Some(content_y));
+                        }
+                        let mut own_width = 0;
+                        let mut own_height = 0;
+                        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+                            own_width = layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
+                            own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+                        }
+                        if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get_mut(&p)) {
+                            // content x and y is negative because the last child is computed first. In the end the values are offset by contentWidth and contentHeight which should get to 0,0
+                            parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(0));
+                            parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(content_y - own_height));
+                            match parent_layout_mut.get::<{LayoutValue::ContentWidth as usize}>() {
+                                Some(parent_content_width) => {
+                                    if parent_content_width < own_width {
+                                        parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(own_width));
+                                    }
+                                },
+                                None => {
+                                    parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(own_width));
+                                }
+                            }
+                            match parent_layout_mut.get::<{LayoutValue::ContentHeight as usize}>() {
+                                Some(parent_content_height) => {
+                                    parent_layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(parent_content_height + own_height));
+                                },
+                                None => {
+                                    parent_layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(own_height));
+                                }
+                            }
+                        }
+                    },
+                    _ => {}
+                }
+            }
+        }
     }
 
     fn layout_mask(&mut self, _node_handle: &tl::NodeHandle) {
-        // TODO convert relative X and Y to absolute X and Y
-        // TODO collapse margins
-        // TODO calculate masks and add scrollbars
+
+        // TODO convert relative X and Y to absolute X and Y (add parent ContentWidth to X and ContentHeight to Y)
+        // TODO calculate masked X and Y and width and height
     }
 
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
@@ -361,7 +489,6 @@ impl Window<'_, '_, '_> {
                     // Draw background
                     let (background_color, _) = style.get_value::<css::CssColor>("background-color");
                     if background_color.is_some() {
-                        println!("{:?} {:?} {:?}", width, height, background_color);
                         let width = width.unwrap();
                         let height = height.unwrap();
                         let background_color = background_color.unwrap();

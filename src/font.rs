@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use sdl2::render::Canvas;
 
 struct TextCanvasBuilder<'a, Target: sdl2::render::RenderTarget> {
@@ -87,6 +87,55 @@ impl<'a> Font<'a> {
 
     pub fn face(&self) -> Option<&ttf_parser::Face<'a>> {
         self.faces.get(&self.used_index)
+    }
+
+    /// Dimensions of the given text with this font, using the given line height and max width.
+    /// - text [&str] - Text to measure.
+    /// - line_height [i32] - Height of one line of text.
+    /// - x0 [i32] - X position of the text.
+    /// - max_width [Option<i32>] - Maximum width of the text. Breaks the line if the width is exceeded, but only on characters in the break_on set.
+    /// That means the returned width can exceed max_width, if breaking it would result in an empty line.
+    /// - break_on [&HashSet<char>] - Characters on which a line break can be insterted due to max_width. If max_width is none, this is ignored.
+    /// 
+    /// Returns a tuple of (width, height, x1). Height is 1 line short.
+    pub fn text_dimensions(&self, text: &str, line_height: i32, x0: i32, max_width: Option<i32>, break_on: &HashSet<char>) -> (i32, i32, i32) {
+        let mut x = x0;
+        let mut y = 0;
+        let mut break_x = 0;
+        let mut max_x = 0;
+        if let Some(face) = self.face() {
+            for c in text.chars() {
+                if let Some(glyph_id) = face.glyph_index(c) {
+                    if break_on.contains(&c) {
+                        break_x = x;
+                    }
+                    let hor_advance = face.glyph_hor_advance(glyph_id).unwrap_or(0) as i32;
+                    if max_width.is_some() && (x + hor_advance > max_width.unwrap()) {
+                        // line break because max width is exceeded
+                        if x > max_x {
+                            max_x = x;
+                        }
+                        x = x - break_x;
+                        // dont break line if it would result in an empty line (break_x == 0)
+                        if break_x > 0 {
+                            y += line_height;
+                            break_x = 0;
+                        }
+                    } else if c == '\n' {
+                        // line break in text
+                        if x > max_x {
+                            max_x = x;
+                        }
+                        x = 0;
+                        break_x = 0;
+                        y += line_height; 
+                    } else {
+                        x += hor_advance;
+                    }
+                }
+            }
+        }
+        (max_x, y, x)
     }
 
     pub fn render<Target: sdl2::render::RenderTarget>(&self, canvas: & mut Canvas<Target>, text: &str) {
