@@ -179,8 +179,8 @@ impl Window<'_, '_, '_> {
         // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
         // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
         // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
-        for (node_handle, _parent_handle) in all_handles.iter() {
-            self.layout_mask(node_handle);
+        for (node_handle, parent_handle) in all_handles.iter() {
+            self.layout_mask_top_down(*node_handle, *parent_handle);
         }
     }
 
@@ -466,10 +466,82 @@ impl Window<'_, '_, '_> {
         }
     }
 
-    fn layout_mask(&mut self, _node_handle: &tl::NodeHandle) {
-
-        // TODO convert relative X and Y to absolute X and Y (add parent ContentWidth to X and ContentHeight to Y)
-        // TODO calculate masked X and Y and width and height
+    /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
+    fn layout_mask_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        let mut parent_content_width = 0;
+        let mut parent_content_height = 0;
+        let mut parent_x = 0;
+        let mut parent_y = 0;
+        let mut parent_width = 0;
+        let mut parent_height = 0;
+        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+            parent_content_width = parent_layout.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
+            parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
+            parent_x = parent_layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
+            parent_y = parent_layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+            parent_width = parent_layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
+            parent_height = parent_layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+        }
+        let mut own_x = 0;
+        let mut own_y = 0;
+        let mut own_width = 0;
+        let mut own_height = 0;
+        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+            own_x = layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
+            own_y = layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+            own_width = layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
+            own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+        }
+        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+            own_x += parent_x + parent_content_width;
+            own_y += parent_y + parent_content_height;
+            layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
+            layout_mut.set::<{LayoutValue::Y as usize}>(Some(own_y));
+            // horizontal mask
+            if own_x < parent_x && own_x + own_width > parent_x + parent_width {
+                // left and right overflow
+                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
+                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+            } else if own_x < parent_x && own_x + own_width > parent_x {
+                // left overflow
+                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
+                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+            } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
+                // right overflow
+                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
+                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+            } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
+                // element inside parent (horizontally)
+                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
+                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+            } else {
+                // element outside parent (horizontally)
+                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
+                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
+            }
+            // vertical mask
+            if own_y < parent_y && own_y + own_height > parent_y + parent_height {
+                // top and bottom overflow
+                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
+                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+            } else if own_y < parent_y && own_y + own_height > parent_y {
+                // top overflow
+                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
+                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+            } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
+                // bottom overflow
+                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
+                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+            } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
+                // element inside parent (vertically)
+                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
+                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+            } else {
+                // element outside parent (vertically)
+                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
+                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
+            }
+        }
     }
 
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
