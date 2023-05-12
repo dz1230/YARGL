@@ -43,7 +43,7 @@ impl Context<'_, '_> {
                                     finger_data: None,
                                     timestamp,
                                 }
-                            }));
+                            }), window);
                             break;
                         }
                     }
@@ -66,7 +66,7 @@ impl Context<'_, '_> {
                                     finger_data: None,
                                     timestamp,
                                 }
-                            }));
+                            }), window);
                             break;
                         }
                     }
@@ -87,7 +87,7 @@ impl Context<'_, '_> {
                                 }),
                                 finger_data: None,
                                 timestamp,
-                            }));
+                            }), window);
                             break;
                         }
                     }
@@ -102,7 +102,7 @@ impl Context<'_, '_> {
                                 x: if direction == sdl2::mouse::MouseWheelDirection::Normal {x} else {-x},
                                 y: if direction == sdl2::mouse::MouseWheelDirection::Normal {y} else {-y},
                                 timestamp,
-                            }));
+                            }), window);
                             break;
                         }
                     }

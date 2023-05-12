@@ -134,6 +134,21 @@ impl Window<'_, '_, '_, '_> {
         self.sdl_canvas.window()
     }
 
+    /// Retrieves the top node at the given cursor position. None if the position is outside the canvas.
+    pub fn get_node_at(&self, x: i32, y: i32) -> Option<&tl::Node> {
+        if x < 0 || y < 0 || x >= (self.width as i32) || y >= (self.height as i32) {
+            return None;
+        }
+        match self.id_canvas.read_pixels(sdl2::rect::Rect::new(x, y, 1, 1), sdl2::pixels::PixelFormatEnum::RGBA8888)  {
+            Ok(pixel) => {
+                let id = pixel[0] as u32 + ((pixel[1] as u32) >> 8) + ((pixel[2] as u32) >> 16) + ((pixel[3] as u32) >> 24);
+                return tl::NodeHandle::new(id).get(self.vdom.parser());
+            },
+            Err(_) => None
+        }
+
+    }
+
     /// Creates a new window and parses the given html.
     pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
         let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)

@@ -106,6 +106,7 @@ impl<'a> Font<'a> {
         self.faces.get(&self.used_index)
     }
 
+    // TODO fill shapes (currently only draws outlines)
     /// Dimensions of the given text with this font, using the given line height and max width.
     /// Optionally draws the text on the given canvas.
     /// - text [&str] - Text to measure.
