@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, rc::Rc};
 
 use tl::VDom;
 
-use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}};
+use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}, event};
 
 #[derive(Debug)]
 pub struct DrawingError {
@@ -26,7 +26,11 @@ pub struct Window<'a, 'f, 'ff, 's> {
     vdom: VDom<'a>,
     all_styles: Vec<Rc<css::Style>>,
     computed_styles: HashMap<tl::NodeHandle, css::ComputedStyle>,
-    computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>
+    computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>,
+    pub pointer_down_events: event::GenericEventReceiver<event::PointerDownEvent>,
+    pub pointer_up_events: event::GenericEventReceiver<event::PointerUpEvent>,
+    pub pointer_move_events: event::GenericEventReceiver<event::PointerMoveEvent>,
+    pub scroll_events: event::GenericEventReceiver<event::ScrollEvent>,
 }
 
 impl Window<'_, '_, '_, '_> {
@@ -126,6 +130,10 @@ impl Window<'_, '_, '_, '_> {
         }
     }
 
+    pub fn sdl_window(&self) -> &sdl2::video::Window {
+        self.sdl_canvas.window()
+    }
+
     /// Creates a new window and parses the given html.
     pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
         let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
@@ -147,6 +155,10 @@ impl Window<'_, '_, '_, '_> {
             all_styles: Vec::new(),
             computed_styles: HashMap::new(),
             computed_layouts: HashMap::new(),
+            pointer_down_events: event::GenericEventReceiver::new(),
+            pointer_up_events: event::GenericEventReceiver::new(),
+            pointer_move_events: event::GenericEventReceiver::new(),
+            scroll_events: event::GenericEventReceiver::new(),
         };
         w.compute_styles(html_filename);
         w
@@ -388,7 +400,10 @@ impl Window<'_, '_, '_, '_> {
         // TODO optimize this (problem see above)
         let all_handles = self.get_all_handles(self.vdom.children(), None);
         for (node_handle, _parent_handle) in all_handles {
-            self.draw_element(&node_handle);
+            match self.draw_element(&node_handle) {
+                Ok(_) => {},
+                Err(_err) => {}
+            }
         }
         self.sdl_canvas.present();
     }
@@ -682,7 +697,7 @@ impl Window<'_, '_, '_, '_> {
     }
 
     /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
-    fn layout_mask_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+    fn layout_mask_top_down(&mut self, _node_handle: tl::NodeHandle, _parent_handle: Option<tl::NodeHandle>) {
         // TODO doesnt seem to work properly at all, redo all of this
         // let mut parent_content_width = 0;
         // let mut parent_content_height = 0;

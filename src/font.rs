@@ -107,12 +107,14 @@ impl<'a> Font<'a> {
     }
 
     /// Dimensions of the given text with this font, using the given line height and max width.
+    /// Optionally draws the text on the given canvas.
     /// - text [&str] - Text to measure.
     /// - line_height [i32] - Height of one line of text.
     /// - x0 [i32] - X position of the text.
     /// - max_width [Option<i32>] - Maximum width of the text. Breaks the line if the width is exceeded, but only on characters in the break_on set.
     /// That means the returned width can exceed max_width, if breaking it would result in an empty line.
     /// - break_on [&HashSet<char>] - Characters on which a line break can be insterted due to max_width. If max_width is none, this is ignored.
+    /// - draw_on [Option<&mut sdl2::render::Canvas<Target>>] - If given, draws the text on the canvas.
     /// 
     /// Returns a tuple of (width, height, x1, y1). Height is 1 line short.
     pub fn text_dimensions<Target: sdl2::render::RenderTarget>(&self, text: &str, line_height: i32, _font_size: i32, x0: i32, y0: i32, max_width: Option<i32>, break_on: &HashSet<char>, draw_on: Option<&mut sdl2::render::Canvas<Target>>) -> (i32, i32, i32, i32) {
@@ -180,9 +182,14 @@ impl<'a> Font<'a> {
                 let scale = line_height as f32 / face.units_per_em() as f32;
                 let mut text_builder = TextCanvasBuilder::new(x0 as f32, (y0 + line_height) as f32, scale, canvas);
                 for line in lines {
+                    text_builder.x0 = x0 as f32;
                     for c in line.chars() {
                         if let Some(glyph_id) = face.glyph_index(c) {
+                            // TODO calculate baseline and y bearing
+                            let bearing_x = face.glyph_hor_side_bearing(glyph_id).unwrap_or(0) as f32 * scale;
+                            text_builder.x0 += bearing_x;
                             let _bbox = face.outline_glyph(glyph_id, &mut text_builder);
+                            text_builder.x0 -= bearing_x;
                             text_builder.x0 += scale * (face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32);
                         }
                     }
@@ -191,18 +198,5 @@ impl<'a> Font<'a> {
             }
         }
         (max_x, y - y0, x, y)
-    }
-
-    pub fn render<Target: sdl2::render::RenderTarget>(&self, canvas: & mut Canvas<Target>, text: &str) {
-        if let Some(face) = self.face() {
-            let scale = 256.0 / face.units_per_em() as f32;
-            let mut builder = TextCanvasBuilder::new(0.0, 256.0, scale, canvas);
-            for c in text.chars() {
-                if let Some(glyph_id) = face.glyph_index(c) {
-                    let _bbox = face.outline_glyph(glyph_id, &mut builder);
-                    builder.x0 += (face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32) * scale;
-                }
-            }
-        }
     }
 }
