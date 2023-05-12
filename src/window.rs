@@ -152,7 +152,7 @@ impl Window<'_, '_, '_, '_> {
         w
     }
 
-    /// I hope copilot generated this correctly. It's supposed to draw a quarter of a circle, not a full one. Uses midpoint circle algorithm.
+    /// Draws a quarter of a circle using midpoint circle algorithm.
     fn draw_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) {
         if r <= 0 {
             return;
@@ -185,6 +185,15 @@ impl Window<'_, '_, '_, '_> {
                 x -= 1;
                 err += 1 - 2 * x;
             }
+        }
+    }
+
+    /// Fills a quarter of a circle using midpoint circle algorithm.
+    fn fill_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) {
+        let mut r_mut = r;
+        while r_mut > 0 {
+            self.draw_quarter_circle(x0, y0, r_mut, x_direction, y_direction, color, id_color);
+            r_mut -= 1;
         }
     }
 
@@ -273,27 +282,27 @@ impl Window<'_, '_, '_, '_> {
 
                 // TODO how to handle decision between left and top border with?
                 if border_top_left_radius > 0 {
-                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset, border_top_left_radius, -1, -1, border_top_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, border_top_left_radius, -1, -1, border_top_color.sdl_color, id_color);
                     let inner_top_left_radius = if border_top_left_radius > border_top_width { border_top_left_radius - border_top_width } else { 0 };
-                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset, inner_top_left_radius, -1, -1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, inner_top_left_radius, -1, -1, background_color.sdl_color, id_color);
                 } else {
                     let top_left_rect = sdl2::rect::Rect::new(x, y, left_x_offset as u32, top_y_offset as u32);
                     self.sdl_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
                     self.id_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
                 }
                 if border_bottom_left_radius > 0 {
-                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, border_bottom_left_radius, -1, 1, border_bottom_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, border_bottom_left_radius, -1, 1, border_bottom_color.sdl_color, id_color);
                     let inner_bottom_left_radius = if border_bottom_left_radius > border_bottom_width { border_bottom_left_radius - border_bottom_width } else { 0 };
-                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_bottom_left_radius, -1, 1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_bottom_left_radius, -1, 1, background_color.sdl_color, id_color);
                 } else {
                     let bottom_left_rect = sdl2::rect::Rect::new(x, y + top_y_offset + inner_height as i32, left_x_offset as u32, bottom_y_offset as u32);
                     self.sdl_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
                     self.id_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
                 }
                 if border_top_right_radius > 0 {
-                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, border_top_right_radius, 1, -1, border_top_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, border_top_right_radius, 1, -1, border_top_color.sdl_color, id_color);
                     let inner_top_right_radius = if border_top_right_radius > border_top_width { border_top_right_radius - border_top_width } else { 0 };
-                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, inner_top_right_radius, 1, -1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, inner_top_right_radius, 1, -1, background_color.sdl_color, id_color);
                 } else {
                     let top_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y, right_x_offset as u32, top_y_offset as u32);
                     self.sdl_canvas.fill_rect(top_right_rect).map_err(|msg| DrawingError {msg})?;
@@ -301,16 +310,25 @@ impl Window<'_, '_, '_, '_> {
                     
                 }
                 if border_bottom_right_radius > 0 {
-                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, border_bottom_right_radius, 1, 1, border_bottom_color.sdl_color, id_color);
+                    // draw borders in corner
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, border_bottom_right_radius, 1, 1, border_bottom_color.sdl_color, id_color);
                     let inner_bottom_right_radius = if border_bottom_right_radius > border_bottom_width { border_bottom_right_radius - border_bottom_width } else { 0 };
-                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, inner_bottom_right_radius, 1, 1, background_color.sdl_color, id_color);
+                    // fill corner background
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, inner_bottom_right_radius, 1, 1, background_color.sdl_color, id_color);
                 } else {
+                    // fill corner background
+                    self.sdl_canvas.set_draw_color(background_color.sdl_color);
                     let bottom_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, right_x_offset as u32, bottom_y_offset as u32);
                     self.sdl_canvas.fill_rect(bottom_right_rect).map_err(|msg| DrawingError {msg})?;
                     self.id_canvas.fill_rect(bottom_right_rect).map_err(|msg| DrawingError {msg})?;
-                    let border_bottom_bottom_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, right_x_offset as u32, border_bottom_width as u32);
-                    self.sdl_canvas.fill_rect(border_bottom_bottom_right_rect).map_err(|msg| DrawingError {msg})?;
-                    self.id_canvas.fill_rect(border_bottom_bottom_right_rect).map_err(|msg| DrawingError {msg})?;
+                    // draw borders in corner
+                    self.sdl_canvas.set_draw_color(border_bottom_color.sdl_color);
+                    let border_bottom_right_bottom_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + full_height - border_bottom_width as i32, right_x_offset as u32, border_bottom_width as u32);
+                    self.sdl_canvas.fill_rect(border_bottom_right_bottom_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(border_bottom_right_bottom_rect).map_err(|msg| DrawingError {msg})?;
+                    let border_bottom_right_right_rect = sdl2::rect::Rect::new(x + full_width - border_right_width as i32, y + top_y_offset + inner_height as i32, border_right_width as u32, bottom_y_offset as u32);
+                    self.sdl_canvas.fill_rect(border_bottom_right_right_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(border_bottom_right_right_rect).map_err(|msg| DrawingError {msg})?;
                 }
 
                 return Ok(DrawingSuccess {});
@@ -549,7 +567,7 @@ impl Window<'_, '_, '_, '_> {
                                             let font_name = font_name.trim();
                                             if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
                                                 let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
-                                                let (text_width, text_height, new_content_x) = font.text_dimensions(text_content.as_str(), font_size, -parent_x, parent_width, &breakable);
+                                                let (text_width, text_height, new_content_x, _) = font.text_dimensions::<sdl2::video::Window>(text_content.as_str(), font_size, font_size, -parent_x, 0, parent_width, &breakable, None);
                                                 if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
                                                     layout_mut.set::<{LayoutValue::Width as usize}>(Some(text_width));
                                                     layout_mut.set::<{LayoutValue::Height as usize}>(Some(text_height));
@@ -666,104 +684,95 @@ impl Window<'_, '_, '_, '_> {
     /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
     fn layout_mask_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
         // TODO doesnt seem to work properly at all, redo all of this
-        let mut parent_content_width = 0;
-        let mut parent_content_height = 0;
-        let mut parent_x = 0;
-        let mut parent_y = 0;
-        let mut parent_width = 0;
-        let mut parent_height = 0;
-        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
-            parent_content_width = parent_layout.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
-            parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-            parent_x = parent_layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
-            parent_y = parent_layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
-            parent_width = parent_layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
-            parent_height = parent_layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
-        }
-        let mut own_x = 0;
-        let mut own_y = 0;
-        let mut own_width = 0;
-        let mut own_height = 0;
-        if let Some(layout) = self.computed_layouts.get(&node_handle) {
-            own_x = layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
-            own_y = layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
-            own_width = layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
-            own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
-        }
-        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-            // TODO adding content_width here might result in a wrong value for siblings of block elements, which reset the content X and therefore the X of this element
-            // own_x += parent_x + parent_content_width;
-            // own_y += parent_y + parent_content_height;
-            // layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
-            // layout_mut.set::<{LayoutValue::Y as usize}>(Some(own_y));
-            // // horizontal mask
-            // if own_x < parent_x && own_x + own_width > parent_x + parent_width {
-            //     // left and right overflow
-            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
-            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-            // } else if own_x < parent_x && own_x + own_width > parent_x {
-            //     // left overflow
-            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
-            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-            // } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
-            //     // right overflow
-            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
-            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-            // } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
-            //     // element inside parent (horizontally)
-            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
-            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-            // } else {
-            //     // element outside parent (horizontally)
-            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
-            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
-            // }
-            // // vertical mask
-            // if own_y < parent_y && own_y + own_height > parent_y + parent_height {
-            //     // top and bottom overflow
-            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
-            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-            // } else if own_y < parent_y && own_y + own_height > parent_y {
-            //     // top overflow
-            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
-            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-            // } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
-            //     // bottom overflow
-            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
-            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-            // } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
-            //     // element inside parent (vertically)
-            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
-            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-            // } else {
-            //     // element outside parent (vertically)
-            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
-            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
-            // }
-        }
+        // let mut parent_content_width = 0;
+        // let mut parent_content_height = 0;
+        // let mut parent_x = 0;
+        // let mut parent_y = 0;
+        // let mut parent_width = 0;
+        // let mut parent_height = 0;
+        // if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+        //     parent_content_width = parent_layout.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
+        //     parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
+        //     parent_x = parent_layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
+        //     parent_y = parent_layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+        //     parent_width = parent_layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
+        //     parent_height = parent_layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+        // }
+        // let mut own_x = 0;
+        // let mut own_y = 0;
+        // let mut own_width = 0;
+        // let mut own_height = 0;
+        // if let Some(layout) = self.computed_layouts.get(&node_handle) {
+        //     own_x = layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
+        //     own_y = layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+        //     own_width = layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
+        //     own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+        // }
+        // if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+        //     // TODO adding content_width here might result in a wrong value for siblings of block elements, which reset the content X and therefore the X of this element
+        //     // own_x += parent_x + parent_content_width;
+        //     // own_y += parent_y + parent_content_height;
+        //     // layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
+        //     // layout_mut.set::<{LayoutValue::Y as usize}>(Some(own_y));
+        //     // // horizontal mask
+        //     // if own_x < parent_x && own_x + own_width > parent_x + parent_width {
+        //     //     // left and right overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
+        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+        //     // } else if own_x < parent_x && own_x + own_width > parent_x {
+        //     //     // left overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
+        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+        //     // } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
+        //     //     // right overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
+        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+        //     // } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
+        //     //     // element inside parent (horizontally)
+        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
+        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+        //     // } else {
+        //     //     // element outside parent (horizontally)
+        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
+        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
+        //     // }
+        //     // // vertical mask
+        //     // if own_y < parent_y && own_y + own_height > parent_y + parent_height {
+        //     //     // top and bottom overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
+        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+        //     // } else if own_y < parent_y && own_y + own_height > parent_y {
+        //     //     // top overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
+        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+        //     // } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
+        //     //     // bottom overflow
+        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
+        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+        //     // } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
+        //     //     // element inside parent (vertically)
+        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
+        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+        //     // } else {
+        //     //     // element outside parent (vertically)
+        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
+        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
+        //     // }
+        // }
     }
 
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
-    fn draw_element(&mut self, node_handle: &tl::NodeHandle) {
-        match self.draw_background(node_handle.clone()) {
-            Ok(_) => {},
-            Err(e) => {
-                println!("Error drawing background: {:?}", e);
-            }
-        }
+    fn draw_element(&mut self, node_handle: &tl::NodeHandle) -> Result<DrawingSuccess, DrawingError> {
+        self.draw_background(node_handle.clone())?;
         if let Some(node) = node_handle.get(self.vdom.parser()) {
             if let Some(style) = self.computed_styles.get(node_handle) {
                 if let Some(layout) = self.computed_layouts.get(node_handle) {
-                    // TODO use masked layout values
-                    let _x = layout.get::<{LayoutValue::X as usize}>();
-                    let _y = layout.get::<{LayoutValue::Y as usize}>();
-                    let width = layout.get::<{LayoutValue::Width as usize}>();
-                    let height = layout.get::<{LayoutValue::Height as usize}>();
-                    // if x.is_none() || y.is_none() || width.is_none() || height.is_none() {
-                    if width.is_none() || height.is_none() {
-                        return;
-                    }
-                    // TODO layout text properly
+                    // TODO mask layout
+                    let x = layout.get::<{LayoutValue::X as usize}>().ok_or(DrawingError{msg: "missing x".to_string()})?;
+                    let y = layout.get::<{LayoutValue::Y as usize}>().ok_or(DrawingError{msg: "missing y".to_string()})?;
+                    let width = layout.get::<{LayoutValue::Width as usize}>().ok_or(DrawingError{msg: "missing width".to_string()})?;
+                    //let height = layout.get::<{LayoutValue::Height as usize}>().ok_or(DrawingError{msg: "missing height".to_string()})?;
+                    let font_size = layout.get::<{LayoutValue::FontSize as usize}>().ok_or(DrawingError{msg: "missing font size".to_string()})?;
                     // Draw text
                     let text = node.inner_text(self.vdom.parser()).to_string();
                     let (font_family_opt, _) = style.get_value::<String>("font-family");
@@ -778,13 +787,16 @@ impl Window<'_, '_, '_, '_> {
                             let font_name = font_name.trim();
                             if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
                                 println!("Found font: {:?}", font_name);
-                                font.render(&mut self.sdl_canvas, text.as_str());
+                                let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
+                                font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
                                 break;
                             }
                         }
                     }
+                    return Ok(DrawingSuccess {});
                 }
             }
         }
+        Err(DrawingError{msg: "failed to draw element".to_string()})
     }
 }
