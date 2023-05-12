@@ -4,15 +4,23 @@ use tl::VDom;
 
 use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}};
 
+#[derive(Debug)]
+pub struct DrawingError {
+    msg: String
+}
+pub struct DrawingSuccess;
+
 pub struct WindowCreationOptions {
     pub title: String,
     pub width: u32,
     pub height: u32,
 }
 
-pub struct Window<'a, 'f, 'ff> {
+pub struct Window<'a, 'f, 'ff, 's> {
     ctx: Rc<Context<'f, 'ff>>,
     sdl_canvas: sdl2::render::Canvas<sdl2::video::Window>,
+    // id canvas stores the node id for each pixel in the canvas. Used for hit testing.
+    id_canvas: sdl2::render::SurfaceCanvas<'s>,
     width: u32,
     height: u32,
     vdom: VDom<'a>,
@@ -21,7 +29,7 @@ pub struct Window<'a, 'f, 'ff> {
     computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>
 }
 
-impl Window<'_, '_, '_> {
+impl Window<'_, '_, '_, '_> {
     /// Parses all styles from the document and stores them in all_styles. all_styles is cleared before parsing.
     /// - html_filename: The path to the html file. Used to resolve relative paths in link tags.
     fn read_styles(&mut self, html_filename: Option<&str>) {
@@ -119,10 +127,10 @@ impl Window<'_, '_, '_> {
     }
 
     /// Creates a new window and parses the given html.
-    pub fn new<'a, 'f, 'ff>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff> {
+    pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
         let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
-            .resizable()
+            //.resizable()
             .build()
             .unwrap();
         let canvas = sdl_window
@@ -132,6 +140,7 @@ impl Window<'_, '_, '_> {
         let mut w = Window {
             ctx: ctx.clone(),
             sdl_canvas: canvas,
+            id_canvas: sdl2::render::SurfaceCanvas::from_surface(sdl2::surface::Surface::new(options.width, options.height, sdl2::pixels::PixelFormatEnum::RGBA8888).unwrap()).unwrap(),
             width: options.width,
             height: options.height,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
@@ -141,6 +150,173 @@ impl Window<'_, '_, '_> {
         };
         w.compute_styles(html_filename);
         w
+    }
+
+    /// I hope copilot generated this correctly. It's supposed to draw a quarter of a circle, not a full one. Uses midpoint circle algorithm.
+    fn draw_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) {
+        if r <= 0 {
+            return;
+        }
+        let mut x = r;
+        let mut y = 0;
+        let mut err = 0;
+        while x >= y {
+            self.sdl_canvas.set_draw_color(color);
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 + y * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 + x * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 + x * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 + y * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 - y * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 - x * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 - x * y_direction)).unwrap();
+            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 - y * y_direction)).unwrap();
+            self.id_canvas.set_draw_color(id_color);
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 + y * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 + x * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 + x * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 + y * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 - y * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 - x * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 - x * y_direction)).unwrap();
+            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 - y * y_direction)).unwrap();
+            y += 1;
+            err += 1 + 2 * y;
+            if 2 * (err - x) + 1 > 0 {
+                x -= 1;
+                err += 1 - 2 * x;
+            }
+        }
+    }
+
+    /// Draws the background of a node onto the window and the id canvas.
+    fn draw_background(&mut self, node_handle: tl::NodeHandle) -> Result<DrawingSuccess, DrawingError> {
+        if let Some(layout) = self.computed_layouts.get(&node_handle) {
+            if let Some(style) = self.computed_styles.get(&node_handle) {
+                let (display, _) = style.get_value::<css::Display>("display");
+                if display.is_some() && display.unwrap() == css::Display::None {
+                    return Ok(DrawingSuccess {});
+                }
+                let x = layout.get::<{LayoutValue::X as usize}>().ok_or(DrawingError { msg: "missing x".to_string() })?;
+                let y = layout.get::<{LayoutValue::Y as usize}>().ok_or(DrawingError { msg: "missing y".to_string() })?;
+                let width = layout.get::<{LayoutValue::Width as usize}>().ok_or(DrawingError { msg: "missing width".to_string() })?;
+                let height = layout.get::<{LayoutValue::Height as usize}>().ok_or(DrawingError { msg: "missing height".to_string() })?;
+                let padding_top = layout.get::<{LayoutValue::PaddingTop as usize}>().unwrap_or(0);
+                let padding_left = layout.get::<{LayoutValue::PaddingLeft as usize}>().unwrap_or(0);
+                let padding_bottom = layout.get::<{LayoutValue::PaddingBottom as usize}>().unwrap_or(0);
+                let padding_right = layout.get::<{LayoutValue::PaddingRight as usize}>().unwrap_or(0);
+                let border_top_width = layout.get::<{LayoutValue::BorderTopWidth as usize}>().unwrap_or(0);
+                let border_left_width = layout.get::<{LayoutValue::BorderLeftWidth as usize}>().unwrap_or(0);
+                let border_bottom_width = layout.get::<{LayoutValue::BorderBottomWidth as usize}>().unwrap_or(0);
+                let border_right_width = layout.get::<{LayoutValue::BorderRightWidth as usize}>().unwrap_or(0);
+                let border_top_left_radius = layout.get::<{LayoutValue::BorderTopLeftRadius as usize}>().unwrap_or(0);
+                let border_top_right_radius = layout.get::<{LayoutValue::BorderTopRightRadius as usize}>().unwrap_or(0);
+                let border_bottom_left_radius = layout.get::<{LayoutValue::BorderBottomLeftRadius as usize}>().unwrap_or(0);
+                let border_bottom_right_radius = layout.get::<{LayoutValue::BorderBottomRightRadius as usize}>().unwrap_or(0);
+
+                // TODO mask raw layout values (if overflow is hidden or scroll or auto)
+        
+                let full_width = width + padding_left + padding_right + border_left_width + border_right_width;
+                let full_height = height + padding_top + padding_bottom + border_top_width + border_bottom_width;
+                let left_x_offset = border_top_left_radius.max(border_bottom_left_radius);
+                let right_x_offset = border_top_right_radius.max(border_bottom_right_radius);
+                let inner_width = full_width - left_x_offset - right_x_offset;
+                let top_y_offset = border_top_left_radius.max(border_top_right_radius);
+                let bottom_y_offset = border_bottom_left_radius.max(border_bottom_right_radius);
+                let inner_height = full_height - top_y_offset - bottom_y_offset;
+
+                let id: u32 = node_handle.get_inner();
+                let id_color = sdl2::pixels::Color::RGBA((id&0xFF) as u8, ((id&0x00FF) << 8) as u8, ((id&0x0000FF) << 16) as u8, ((id&0x000000FF) << 24) as u8);
+
+                let (background_color_opt, _) = style.get_value::<css::CssColor>("background-color");
+                let background_color = background_color_opt.unwrap_or(css::CssColor {sdl_color: sdl2::pixels::Color::RGBA(0xFF, 0xFF, 0xFF, 0x0)});
+                self.sdl_canvas.set_draw_color(background_color.sdl_color);
+                self.id_canvas.set_draw_color(id_color);
+
+                let inner_rect = sdl2::rect::Rect::new(x + left_x_offset, y + top_y_offset, inner_width as u32, inner_height as u32);
+                self.sdl_canvas.fill_rect(inner_rect).map_err(|msg| DrawingError {msg})?;
+                self.id_canvas.fill_rect(inner_rect).map_err(|msg| DrawingError {msg})?;
+                let left_rect = sdl2::rect::Rect::new(x, y + top_y_offset, left_x_offset as u32, inner_height as u32);
+                self.sdl_canvas.fill_rect(left_rect).map_err(|msg| DrawingError {msg})?;
+                self.id_canvas.fill_rect(left_rect).map_err(|msg| DrawingError {msg})?;
+                let right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + top_y_offset, right_x_offset as u32, inner_height as u32);
+                self.sdl_canvas.fill_rect(right_rect).map_err(|msg| DrawingError {msg})?;
+                self.id_canvas.fill_rect(right_rect).map_err(|msg| DrawingError {msg})?;
+                let top_rect = sdl2::rect::Rect::new(x + left_x_offset, y, inner_width as u32, top_y_offset as u32);
+                self.sdl_canvas.fill_rect(top_rect).map_err(|msg| DrawingError {msg})?;
+                self.id_canvas.fill_rect(top_rect).map_err(|msg| DrawingError {msg})?;
+                let bottom_rect = sdl2::rect::Rect::new(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_width as u32, bottom_y_offset as u32);
+                self.sdl_canvas.fill_rect(bottom_rect).map_err(|msg| DrawingError {msg})?;
+                self.id_canvas.fill_rect(bottom_rect).map_err(|msg| DrawingError {msg})?;
+
+                // TODO figure out how to handle seams between different border colors
+
+                let (border_top_color_opt, _) = style.get_value::<css::CssColor>("border-top-color");
+                let border_top_color = border_top_color_opt.unwrap_or(background_color.clone());
+                let border_top_rect = sdl2::rect::Rect::new(x + left_x_offset, y, inner_width as u32, border_top_width as u32);
+                self.sdl_canvas.set_draw_color(border_top_color.sdl_color);
+                self.sdl_canvas.fill_rect(border_top_rect).map_err(|msg| DrawingError {msg})?;
+                let (border_left_color_opt, _) = style.get_value::<css::CssColor>("border-left-color");
+                let border_left_color = border_left_color_opt.unwrap_or(background_color.clone());
+                let border_left_rect = sdl2::rect::Rect::new(x, y + top_y_offset, border_left_width as u32, inner_height as u32);
+                self.sdl_canvas.set_draw_color(border_left_color.sdl_color);
+                self.sdl_canvas.fill_rect(border_left_rect).map_err(|msg| DrawingError {msg})?;
+                let (border_bottom_color_opt, _) = style.get_value::<css::CssColor>("border-bottom-color");
+                let border_bottom_color = border_bottom_color_opt.unwrap_or(background_color.clone());
+                let border_bottom_rect = sdl2::rect::Rect::new(x + left_x_offset, y + full_height - border_bottom_width as i32, inner_width as u32, border_bottom_width as u32);
+                self.sdl_canvas.set_draw_color(border_bottom_color.sdl_color);
+                self.sdl_canvas.fill_rect(border_bottom_rect).map_err(|msg| DrawingError {msg})?;
+                let (border_right_color_opt, _) = style.get_value::<css::CssColor>("border-right-color");
+                let border_right_color = border_right_color_opt.unwrap_or(background_color.clone());
+                let border_right_rect = sdl2::rect::Rect::new(x + full_width - border_right_width as i32, y + top_y_offset, border_right_width as u32, inner_height as u32);
+                self.sdl_canvas.set_draw_color(border_right_color.sdl_color);
+                self.sdl_canvas.fill_rect(border_right_rect).map_err(|msg| DrawingError {msg})?;
+
+                // TODO how to handle decision between left and top border with?
+                if border_top_left_radius > 0 {
+                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset, border_top_left_radius, -1, -1, border_top_color.sdl_color, id_color);
+                    let inner_top_left_radius = if border_top_left_radius > border_top_width { border_top_left_radius - border_top_width } else { 0 };
+                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset, inner_top_left_radius, -1, -1, background_color.sdl_color, id_color);
+                } else {
+                    let top_left_rect = sdl2::rect::Rect::new(x, y, left_x_offset as u32, top_y_offset as u32);
+                    self.sdl_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
+                }
+                if border_bottom_left_radius > 0 {
+                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, border_bottom_left_radius, -1, 1, border_bottom_color.sdl_color, id_color);
+                    let inner_bottom_left_radius = if border_bottom_left_radius > border_bottom_width { border_bottom_left_radius - border_bottom_width } else { 0 };
+                    self.draw_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_bottom_left_radius, -1, 1, background_color.sdl_color, id_color);
+                } else {
+                    let bottom_left_rect = sdl2::rect::Rect::new(x, y + top_y_offset + inner_height as i32, left_x_offset as u32, bottom_y_offset as u32);
+                    self.sdl_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
+                }
+                if border_top_right_radius > 0 {
+                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, border_top_right_radius, 1, -1, border_top_color.sdl_color, id_color);
+                    let inner_top_right_radius = if border_top_right_radius > border_top_width { border_top_right_radius - border_top_width } else { 0 };
+                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, inner_top_right_radius, 1, -1, background_color.sdl_color, id_color);
+                } else {
+                    let top_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y, right_x_offset as u32, top_y_offset as u32);
+                    self.sdl_canvas.fill_rect(top_right_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(top_right_rect).map_err(|msg| DrawingError {msg})?;
+                    
+                }
+                if border_bottom_right_radius > 0 {
+                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, border_bottom_right_radius, 1, 1, border_bottom_color.sdl_color, id_color);
+                    let inner_bottom_right_radius = if border_bottom_right_radius > border_bottom_width { border_bottom_right_radius - border_bottom_width } else { 0 };
+                    self.draw_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, inner_bottom_right_radius, 1, 1, background_color.sdl_color, id_color);
+                } else {
+                    let bottom_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, right_x_offset as u32, bottom_y_offset as u32);
+                    self.sdl_canvas.fill_rect(bottom_right_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(bottom_right_rect).map_err(|msg| DrawingError {msg})?;
+                    let border_bottom_bottom_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, right_x_offset as u32, border_bottom_width as u32);
+                    self.sdl_canvas.fill_rect(border_bottom_bottom_right_rect).map_err(|msg| DrawingError {msg})?;
+                    self.id_canvas.fill_rect(border_bottom_bottom_right_rect).map_err(|msg| DrawingError {msg})?;
+                }
+
+                return Ok(DrawingSuccess {});
+            }
+        }
+        Err(DrawingError {msg: "no layout or style".to_string()})
     }
 
     /// Calculates layout information for the whole document.
@@ -153,9 +329,9 @@ impl Window<'_, '_, '_> {
             self.layout_element_font_size(*node_handle, *parent_handle);
             // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
             self.layout_element_top_down(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle);
-            self.layout_element_border(*node_handle);
-            self.layout_element_margin(*node_handle);
+            self.layout_element_padding(*node_handle, *parent_handle);
+            self.layout_element_border(*node_handle, *parent_handle);
+            self.layout_element_margin(*node_handle, *parent_handle);
         }
         for (node_handle, parent_handle) in all_handles.iter().rev() {
             // Second attempt to calculate boxes. 
@@ -163,9 +339,9 @@ impl Window<'_, '_, '_> {
             // (or a previous call of this attempt, which is why it's reversed), 
             // content-based boxes can now be calculated.
             self.layout_element_bottom_up(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle);
-            self.layout_element_border(*node_handle);
-            self.layout_element_margin(*node_handle);
+            self.layout_element_padding(*node_handle, *parent_handle);
+            self.layout_element_border(*node_handle, *parent_handle);
+            self.layout_element_margin(*node_handle, *parent_handle);
         }
         // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
         // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
@@ -176,7 +352,7 @@ impl Window<'_, '_, '_> {
                 if let Some(style) = self.computed_styles.get(node_handle) {
                     if let Some(node) = node_handle.get(self.vdom.parser()) {
                         if let Some(tag) = node.as_tag() {
-                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style);
+                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
                         }
                     }
                 }
@@ -203,10 +379,11 @@ impl Window<'_, '_, '_> {
     /// - Which [usize]: One of [LayoutValue].
     /// - value [Option< f32 >]: Size value.
     /// - unit [Option< Unit >]: Unit of the size value.
-    /// - relative_handle [Option<&tl::NodeHandle>]: Relative layout values are interpreted relative to the layout of this node.
+    /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
     /// 
     /// Returns [Option< i32 >]: Pixel value.
-    fn calc_size_top_down<const WHICH: usize>(&self, value: Option<f32>, unit: Option<css::Unit>, node_handle: tl::NodeHandle, relative_handle: Option<tl::NodeHandle>) -> Option<i32> {        // magic numbers from https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units
+    fn calc_size_top_down<const WHICH: usize>(&self, value: Option<f32>, unit: Option<css::Unit>, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) -> Option<i32> {
+        // magic numbers from https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units
         match unit {
             Some(css::Unit::Px) => Some(value.unwrap_or(0.0) as i32),
             Some(css::Unit::Vw) => Some((value.unwrap_or(0.0) * (self.width as f32) / 100.0) as i32),
@@ -220,24 +397,33 @@ impl Window<'_, '_, '_> {
             Some(css::Unit::Pt) => Some((value.unwrap_or(0.0) * 1.3333333333333333) as i32),
             Some(css::Unit::Pc) => Some((value.unwrap_or(0.0) * 16.0) as i32),
             Some(css::Unit::Percent) => match LayoutValue::from(WHICH) {
+                // padding, border, margin are calculated relative to the element's width
                 LayoutValue::PaddingBottom | LayoutValue::PaddingLeft | LayoutValue::PaddingRight | LayoutValue::PaddingTop |
                 LayoutValue::BorderTopWidth | LayoutValue::BorderLeftWidth | LayoutValue::BorderBottomWidth | LayoutValue::BorderRightWidth |
                 LayoutValue::BorderBottomLeftRadius | LayoutValue::BorderBottomRightRadius | LayoutValue::BorderTopLeftRadius | LayoutValue::BorderTopRightRadius
-                 => relative_handle 
-                    .map_or(None, |p| self.computed_layouts.get(&p))
+                 => self.computed_layouts.get(&node_handle)
                     .map_or(None, |l| l.get::<{LayoutValue::Width as usize}>())
                     .map_or(None, |w| Some((value.unwrap_or(0.0) * (w as f32) / 100.0) as i32)),
-                _ => relative_handle
-                .map_or(None, |p| self.computed_layouts.get(&p))
-                .map_or(None, |l| Some(l.get::<{WHICH}>()))
-                .map_or(None, |v| v)
-                .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32) / 100.0) as i32)),
+                // other relative properties are calculated relative to the same property on the parent
+                _ => match parent_handle {
+                    Some(p) => self.computed_layouts.get(&p)
+                    .map_or(None, |l| Some(l.get::<{WHICH}>()))
+                    .map_or(None, |v| v)
+                    .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32) / 100.0) as i32)),
+                    // for root elements, the parent is the viewport
+                    None => match LayoutValue::from(WHICH) {
+                        LayoutValue::Height => Some((value.unwrap_or(0.0) * (self.height as f32) / 100.0) as i32),
+                        _ => Some((value.unwrap_or(0.0) * (self.width as f32) / 100.0) as i32)
+                    }
+                }
             },
             Some(css::Unit::Em) => match LayoutValue::from(WHICH) {
-                LayoutValue::FontSize => relative_handle
+                // font-size in em is calculated relative to the parent's font-size
+                LayoutValue::FontSize => parent_handle
                     .map_or(None, |p| self.computed_layouts.get(&p))
                     .map_or(None, |l| l.get::<{LayoutValue::FontSize as usize}>())
                     .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32)) as i32)),
+                // other em values are calculated relative to the element's font-size
                 _ => self.computed_layouts.get(&node_handle)
                     .map_or(None, |l: &NodeLayoutInfo| l.get::<{LayoutValue::FontSize as usize}>())
                     .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32)) as i32))
@@ -249,14 +435,14 @@ impl Window<'_, '_, '_> {
     /// Sets a layout value using calc_size_top_down. If the value is already set, it will not be overwritten.
     /// - property [&str]: CSS property name.
     /// - node_handle [&tl::NodeHandle]: Node handle.
-    /// - relative_handle [Option<&tl::NodeHandle>]: Relative layout values are interpreted relative to the layout of this node.
-    fn set_size_value_top_down<const WHICH: usize>(&mut self, node_handle: tl::NodeHandle, relative_handle: Option<tl::NodeHandle>) {
+    /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
+    fn set_size_value_top_down<const WHICH: usize>(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
         if self.computed_layouts.get(&node_handle).map_or(None, |l| l.get::<{WHICH}>()).is_some() {
             return;
         }
         if let Some(style) = self.computed_styles.get(&node_handle) {
             let (value, unit) = style.get_value::<f32>(LayoutValue::from(WHICH).to_string().as_str());
-            let value = self.calc_size_top_down::<{WHICH}>(value, unit, node_handle, relative_handle);
+            let value = self.calc_size_top_down::<{WHICH}>(value, unit, node_handle, parent_handle);
             self.computed_layouts.get_mut(&node_handle).map(|l| l.set::<{WHICH}>(value));
         }
     }
@@ -267,31 +453,31 @@ impl Window<'_, '_, '_> {
     }
 
     /// Attempts to calculate an element's padding values.
-    fn layout_element_padding(&mut self, node_handle: tl::NodeHandle) {
-        self.set_size_value_top_down::<{LayoutValue::PaddingTop as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::PaddingRight as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::PaddingBottom as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::PaddingLeft as usize}>(node_handle, Some(node_handle));
+    fn layout_element_padding(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        self.set_size_value_top_down::<{LayoutValue::PaddingTop as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingRight as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingBottom as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingLeft as usize}>(node_handle, parent_handle);
     }
 
     /// Attemps to calculate an element's border widths.
-    fn layout_element_border(&mut self, node_handle: tl::NodeHandle) {
-        self.set_size_value_top_down::<{LayoutValue::BorderTopWidth as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderRightWidth as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomWidth as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderLeftWidth as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderTopLeftRadius as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderTopRightRadius as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomRightRadius as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomLeftRadius as usize}>(node_handle, Some(node_handle));
+    fn layout_element_border(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        self.set_size_value_top_down::<{LayoutValue::BorderTopWidth as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderRightWidth as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomWidth as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderLeftWidth as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderTopLeftRadius as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderTopRightRadius as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomRightRadius as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomLeftRadius as usize}>(node_handle, parent_handle);
     }
 
     /// Attempts to calculate an element's margin values.
-    fn layout_element_margin(&mut self, node_handle: tl::NodeHandle) {
-        self.set_size_value_top_down::<{LayoutValue::MarginTop as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::MarginRight as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::MarginBottom as usize}>(node_handle, Some(node_handle));
-        self.set_size_value_top_down::<{LayoutValue::MarginLeft as usize}>(node_handle, Some(node_handle));
+    fn layout_element_margin(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+        self.set_size_value_top_down::<{LayoutValue::MarginTop as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginRight as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginBottom as usize}>(node_handle, parent_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginLeft as usize}>(node_handle, parent_handle);
     }
 
     /// Determines width and height if they are based on the parent, or fixed.
@@ -338,11 +524,11 @@ impl Window<'_, '_, '_> {
                 match display {
                     Some(css::Display::Inline) => {
                         if let Some(layout) = self.computed_layouts.get(&node_handle) {
-                            let text_content = match node {
+                            let text_content = (match node {
                                 tl::Node::Tag(tag) => tag.inner_text(self.vdom.parser()).to_string(),
                                 tl::Node::Raw(text) => text.try_as_utf8_str().map_or("".to_string(), |s| s.to_string()),
                                 _ => "".to_string()
-                            };
+                            }).trim().to_string();
                             if text_content.len() > 0 {
                                 let (font_family_opt, _) = style.get_value::<String>("font-family");
                                 if let Some(font_family) = font_family_opt {
@@ -420,12 +606,23 @@ impl Window<'_, '_, '_> {
                             }
                         }
                         // get x and y from parent, and update parents contentX and contentY and contentWidth and contentHeight
-                        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-                            layout_mut.set::<{LayoutValue::X as usize}>(Some(0));
+                        let mut content_x = 0;
+                        if display.unwrap() == css::Display::Block {
+                            if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                // block elements break lines, therefore always have X = 0
+                                layout_mut.set::<{LayoutValue::X as usize}>(Some(0));
+                            }
+                        } else {
+                            if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                                content_x = parent_layout.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
+                            }
+                            if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                                layout_mut.set::<{LayoutValue::X as usize}>(Some(content_x));
+                            }
                         }
                         let mut content_y = 0;
-                        if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
-                            content_y = parent_layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
+                        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                            content_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
                         }
                         if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
                             layout_mut.set::<{LayoutValue::Y as usize}>(Some(content_y));
@@ -438,7 +635,7 @@ impl Window<'_, '_, '_> {
                         }
                         if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get_mut(&p)) {
                             // content x and y is negative because the last child is computed first. In the end the values are offset by contentWidth and contentHeight which should get to 0,0
-                            parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(0));
+                            parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(content_x -own_width));
                             parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(content_y - own_height));
                             match parent_layout_mut.get::<{LayoutValue::ContentWidth as usize}>() {
                                 Some(parent_content_width) => {
@@ -495,64 +692,69 @@ impl Window<'_, '_, '_> {
         }
         if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
             // TODO adding content_width here might result in a wrong value for siblings of block elements, which reset the content X and therefore the X of this element
-            own_x += parent_x + parent_content_width;
-            own_y += parent_y + parent_content_height;
-            layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
-            layout_mut.set::<{LayoutValue::Y as usize}>(Some(own_y));
-            // horizontal mask
-            if own_x < parent_x && own_x + own_width > parent_x + parent_width {
-                // left and right overflow
-                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
-                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-            } else if own_x < parent_x && own_x + own_width > parent_x {
-                // left overflow
-                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
-                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-            } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
-                // right overflow
-                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
-                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-            } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
-                // element inside parent (horizontally)
-                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
-                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-            } else {
-                // element outside parent (horizontally)
-                layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
-                layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
-            }
-            // vertical mask
-            if own_y < parent_y && own_y + own_height > parent_y + parent_height {
-                // top and bottom overflow
-                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
-                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-            } else if own_y < parent_y && own_y + own_height > parent_y {
-                // top overflow
-                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
-                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-            } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
-                // bottom overflow
-                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
-                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-            } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
-                // element inside parent (vertically)
-                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
-                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-            } else {
-                // element outside parent (vertically)
-                layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
-                layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
-            }
+            // own_x += parent_x + parent_content_width;
+            // own_y += parent_y + parent_content_height;
+            // layout_mut.set::<{LayoutValue::X as usize}>(Some(own_x));
+            // layout_mut.set::<{LayoutValue::Y as usize}>(Some(own_y));
+            // // horizontal mask
+            // if own_x < parent_x && own_x + own_width > parent_x + parent_width {
+            //     // left and right overflow
+            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
+            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+            // } else if own_x < parent_x && own_x + own_width > parent_x {
+            //     // left overflow
+            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
+            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
+            // } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
+            //     // right overflow
+            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
+            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+            // } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
+            //     // element inside parent (horizontally)
+            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
+            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
+            // } else {
+            //     // element outside parent (horizontally)
+            //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
+            //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
+            // }
+            // // vertical mask
+            // if own_y < parent_y && own_y + own_height > parent_y + parent_height {
+            //     // top and bottom overflow
+            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
+            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+            // } else if own_y < parent_y && own_y + own_height > parent_y {
+            //     // top overflow
+            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
+            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
+            // } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
+            //     // bottom overflow
+            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
+            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+            // } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
+            //     // element inside parent (vertically)
+            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
+            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
+            // } else {
+            //     // element outside parent (vertically)
+            //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
+            //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
+            // }
         }
     }
 
     /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
     fn draw_element(&mut self, node_handle: &tl::NodeHandle) {
+        match self.draw_background(node_handle.clone()) {
+            Ok(_) => {},
+            Err(e) => {
+                println!("Error drawing background: {:?}", e);
+            }
+        }
         if let Some(node) = node_handle.get(self.vdom.parser()) {
             if let Some(style) = self.computed_styles.get(node_handle) {
                 if let Some(layout) = self.computed_layouts.get(node_handle) {
                     // TODO use masked layout values
-                    println!("Drawing: {:?}", node.as_tag().unwrap().name());
                     let _x = layout.get::<{LayoutValue::X as usize}>();
                     let _y = layout.get::<{LayoutValue::Y as usize}>();
                     let width = layout.get::<{LayoutValue::Width as usize}>();
@@ -560,18 +762,6 @@ impl Window<'_, '_, '_> {
                     // if x.is_none() || y.is_none() || width.is_none() || height.is_none() {
                     if width.is_none() || height.is_none() {
                         return;
-                    }
-                    // Draw background
-                    let (background_color, _) = style.get_value::<css::CssColor>("background-color");
-                    if background_color.is_some() {
-                        let width = width.unwrap();
-                        let height = height.unwrap();
-                        let background_color = background_color.unwrap();
-                        self.sdl_canvas.set_draw_color(background_color.sdl_color);
-                        match self.sdl_canvas.fill_rect(sdl2::rect::Rect::new(0, 0, width as u32, height as u32)) {
-                            Ok(_) => {},
-                            Err(e) => println!("Error drawing rect: {:?}", e)
-                        }
                     }
                     // TODO layout text properly
                     // Draw text

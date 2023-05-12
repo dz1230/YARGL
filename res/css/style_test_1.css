@@ -1,8 +1,10 @@
 body {
-    background-color: #000000;
+    background-color: #a0afff;
     width: 600px;
     height: 400px;
     display: block;
+    border-top-left-radius: 25px;
+    border-bottom-right-radius: 50px;;
 }
 
 h1 {
@@ -27,4 +29,6 @@ h1 {
 
 #span1 {
     color: #0000ff;
+    font-family: Arial;
+    font-size: 12px;
 }

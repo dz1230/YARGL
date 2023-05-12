@@ -104,12 +104,14 @@ impl<'a> Font<'a> {
         let mut break_x = 0;
         let mut max_x = 0;
         if let Some(face) = self.face() {
+            let ver_advance_f = face.units_per_em() as f32;
             for c in text.chars() {
                 if let Some(glyph_id) = face.glyph_index(c) {
                     if break_on.contains(&c) {
                         break_x = x;
                     }
-                    let hor_advance = face.glyph_hor_advance(glyph_id).unwrap_or(0) as i32;
+                    let hor_advance_f = face.glyph_hor_advance(glyph_id).unwrap_or(0) as f32;
+                    let hor_advance = (hor_advance_f / ver_advance_f * line_height as f32) as i32;
                     if max_width.is_some() && (x + hor_advance > max_width.unwrap()) {
                         // line break because max width is exceeded
                         if x > max_x {
@@ -133,6 +135,9 @@ impl<'a> Font<'a> {
                         x += hor_advance;
                     }
                 }
+            }
+            if x > max_x {
+                max_x = x;
             }
         }
         (max_x, y, x)

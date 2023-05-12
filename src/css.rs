@@ -75,6 +75,7 @@ impl FromStr for Unit {
 
 pub struct CssValueParseError;
 
+#[derive(Debug, PartialEq)]
 pub enum BoxSizing {
     ContentBox,
     BorderBox,
@@ -101,6 +102,7 @@ impl FromStr for BoxSizing {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Display {
     Block,
     InlineBlock,
@@ -139,6 +141,7 @@ impl FromStr for Display {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub enum FlexDirection {
     Row,
     RowReverse,
@@ -365,7 +368,7 @@ impl ToString for Selector {
 pub struct CssColorParseError;
 
 /// Use this type to retrieve colors from styles.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CssColor {
     pub sdl_color: sdl2::pixels::Color,
 }
@@ -597,6 +600,26 @@ impl ComputedStyle {
             },
             None => {}
         }
+    }
+}
+
+impl ToString for ComputedStyle {
+    fn to_string(&self) -> String {
+        let mut result = String::new();
+        result.push_str(&self.selector.to_string());
+        result.push_str(" {\n");
+        for (property, selected_style) in self.properties.iter() {
+            let (value, unit) = selected_style.get_value::<String>(property);
+            let str_value = match unit {
+                Some(unit) => value.map(|v| format!("{}{}", v, unit.to_string())),
+                None => value
+            };
+            if str_value.is_some() {
+                result.push_str(&format!("\t{}: {};\n", property, str_value.unwrap()));
+            }
+        }
+        result.push_str("}");
+        result
     }
 }
 
