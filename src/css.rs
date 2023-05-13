@@ -575,30 +575,24 @@ impl ComputedStyle {
     /// computed_style.apply_style(style2, None);
     /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(200.0), Some(Unit::Px)));
     /// ```
-    pub fn apply_style(&mut self, style: Rc<Style>, node: Option<&tl::Node>) {
-        match style.get_matching_selector_with_highest_specificity(&self.selector.tag_name, &self.selector.class_list, &self.selector.id, node) {
-            Some(selected_selector) => {
-                let selected_specificity = selected_selector.specificity();
-                for (property, _value) in style.properties.iter() {
-                    match self.properties.get(property) {
-                        Some(old_style) => {
-                            if selected_specificity > *old_style.specificity() {
-                                self.properties.insert(property.to_string(), SelectedStyle { 
-                                    specificity: selected_specificity.clone(),
-                                    style: style.clone()
-                                });
-                            }
-                        },
-                        None => {
-                            self.properties.insert(property.to_string(), SelectedStyle { 
-                                specificity: selected_specificity.clone(),
-                                style: style.clone()
-                            });
-                        }
+    pub fn apply_style(&mut self, style: Rc<Style>, specificity: &Specificity, node: Option<&tl::Node>) {
+        for (property, _value) in style.properties.iter() {
+            match self.properties.get(property) {
+                Some(old_style) => {
+                    if specificity > old_style.specificity() {
+                        self.properties.insert(property.to_string(), SelectedStyle { 
+                            specificity: specificity.clone(),
+                            style: style.clone()
+                        });
                     }
+                },
+                None => {
+                    self.properties.insert(property.to_string(), SelectedStyle { 
+                        specificity: specificity.clone(),
+                        style: style.clone()
+                    });
                 }
-            },
-            None => {}
+            }
         }
     }
 }

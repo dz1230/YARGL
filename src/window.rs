@@ -2,13 +2,8 @@ use std::{collections::{HashMap, HashSet}, rc::Rc};
 
 use tl::VDom;
 
-use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}, event};
+use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}, event, util::{self, DrawingError}};
 
-#[derive(Debug)]
-pub struct DrawingError {
-    msg: String
-}
-pub struct DrawingSuccess;
 
 pub struct WindowCreationOptions {
     pub title: String,
@@ -23,8 +18,8 @@ pub struct Window<'a, 'f, 'ff, 's> {
     id_canvas: sdl2::render::SurfaceCanvas<'s>,
     width: u32,
     height: u32,
+    html_file: String,
     vdom: VDom<'a>,
-    all_styles: Vec<Rc<css::Style>>,
     computed_styles: HashMap<tl::NodeHandle, css::ComputedStyle>,
     computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>,
     pub pointer_down_events: event::GenericEventReceiver<event::PointerDownEvent>,
@@ -34,16 +29,173 @@ pub struct Window<'a, 'f, 'ff, 's> {
 }
 
 impl Window<'_, '_, '_, '_> {
-    /// Parses all styles from the document and stores them in all_styles. all_styles is cleared before parsing.
-    /// - html_filename: The path to the html file. Used to resolve relative paths in link tags.
-    fn read_styles(&mut self, html_filename: Option<&str>) {
-        self.all_styles.clear();
+    /// Creates a new window and parses the given html.
+    pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
+        let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
+            .position_centered()
+            //.resizable()
+            .build()
+            .unwrap();
+        let canvas = sdl_window
+        .into_canvas()
+        .present_vsync()
+        .build().unwrap();
+        let mut w = Window {
+            ctx: ctx.clone(),
+            sdl_canvas: canvas,
+            id_canvas: sdl2::render::SurfaceCanvas::from_surface(sdl2::surface::Surface::new(options.width, options.height, sdl2::pixels::PixelFormatEnum::RGBA8888).unwrap()).unwrap(),
+            width: options.width,
+            height: options.height,
+            vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
+            html_file: html_filename.unwrap_or("").to_string(),
+            computed_styles: HashMap::new(),
+            computed_layouts: HashMap::new(),
+            pointer_down_events: event::GenericEventReceiver::new(),
+            pointer_up_events: event::GenericEventReceiver::new(),
+            pointer_move_events: event::GenericEventReceiver::new(),
+            scroll_events: event::GenericEventReceiver::new(),
+        };
+        w.compute_styles();
+        w
+    }
+
+    /// Retrieves the top node at the given cursor position. None if the position is outside the canvas.
+    pub fn get_node_at(&self, x: i32, y: i32) -> Option<&tl::Node> {
+        match self.get_node_handle_at(x, y) {
+            Some(node_handle) => node_handle.get(self.vdom.parser()),
+            None => None
+        }
+    }
+
+    /// Retrieves the handle of the top node at the given cursor position. None if the position is outside the canvas.
+    pub fn get_node_handle_at(&self, x: i32, y: i32) -> Option<tl::NodeHandle> {
+        if x < 0 || y < 0 || x >= (self.width as i32) || y >= (self.height as i32) {
+            return None;
+        }
+        match self.id_canvas.read_pixels(sdl2::rect::Rect::new(x, y, 1, 1), sdl2::pixels::PixelFormatEnum::RGBA8888)  {
+            Ok(pixel) => {
+                let id = pixel[0] as u32 + ((pixel[1] as u32) >> 8) + ((pixel[2] as u32) >> 16) + ((pixel[3] as u32) >> 24);
+                return Some(tl::NodeHandle::new(id));
+            },
+            Err(_) => None
+        }
+
+    }
+
+    /// Get the underlying sdl window.
+    pub fn sdl_window(&self) -> &sdl2::video::Window {
+        self.sdl_canvas.window()
+    }
+
+    /// Viewport width.
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    /// Viewport height.
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Redraws the whole window.
+    pub fn draw(&mut self) {
+        // TODO: Optimize this (vdom.nodes() gives references to nodes but nodes cant hash, and there is no good way to get a node handle from a node. computing styles while collecting the node handles is not possible because...
+        // we need to get the node out of the node handle to check if a style matches and to get it's children, but to get the node it is neccessary to borrow the self.vdom.parser() which means we cant borrow self as mutable at the same time, which
+        // happen if we would recursively compute the styles for the node's children. Therefore all node handles are currently collected before drawing the nodes, and then we traverse the whole tree again to draw the nodes.
+        // There MUST be a better way to do this.
+        self.id_canvas.set_draw_color(sdl2::pixels::Color::RGBA(0, 0, 0, 0));
+        self.id_canvas.clear();
+        self.id_canvas.set_blend_mode(sdl2::render::BlendMode::None);
+        self.sdl_canvas.set_draw_color(sdl2::pixels::Color::RGBA(0xFF, 0xFF, 0xFF, 0xFF));
+        self.sdl_canvas.clear();
+        self.sdl_canvas.set_blend_mode(sdl2::render::BlendMode::Blend);
+        let all_handles = self.get_all_handles(self.vdom.children(), None);
+        for (node_handle, _parent_handle) in all_handles {
+            match self.draw_element(&node_handle) {
+                Ok(_) => {},
+                Err(_err) => {}
+            }
+        }
+        self.sdl_canvas.present();
+    }
+
+    /// Re-Calculates layout information for every node in the document.
+    pub fn layout(&mut self) {
+        self.computed_layouts.clear();
+        let all_handles = self.get_all_handles(self.vdom.children(), None);
+        for (node_handle, parent_handle) in all_handles.iter() {
+            if !self.computed_layouts.contains_key(&node_handle) {
+                self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
+            }
+            self.layout_element_font_size(*node_handle, *parent_handle);
+            // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
+            self.layout_element_top_down(*node_handle, *parent_handle);
+            self.layout_element_padding(*node_handle, *parent_handle);
+            self.layout_element_border(*node_handle, *parent_handle);
+            self.layout_element_margin(*node_handle, *parent_handle);
+        }
+        for (node_handle, parent_handle) in all_handles.iter().rev() {
+            // Second attempt to calculate boxes. 
+            // If the content's boxes were calculated in the first attempt 
+            // (or a previous call of this attempt, which is why it's reversed), 
+            // content-based boxes can now be calculated.
+            self.layout_element_bottom_up(*node_handle, *parent_handle);
+            self.layout_element_padding(*node_handle, *parent_handle);
+            self.layout_element_border(*node_handle, *parent_handle);
+            self.layout_element_margin(*node_handle, *parent_handle);
+        }
+        // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
+        // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
+        // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
+        for (node_handle, parent_handle) in all_handles.iter() {
+            self.layout_mask_top_down(*node_handle, *parent_handle);
+            if let Some(layout) = self.computed_layouts.get(node_handle) {
+                if let Some(style) = self.computed_styles.get(node_handle) {
+                    if let Some(node) = node_handle.get(self.vdom.parser()) {
+                        if let Some(tag) = node.as_tag() {
+                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Applies the given style to all nodes that match the style's selector.
+    /// Does not change properties that are already set with a higher specificity.
+    /// 
+    /// - style: The style to apply.
+    pub fn apply_style(&mut self, style: &Rc<css::Style>) {
+        for selector in style.selectors.iter() {
+            if let Some(nodes) = self.vdom.query_selector(selector.to_string().as_str()) {
+                for node_handle in nodes {
+                    match self.computed_styles.get_mut(&node_handle) {
+                        Some(computed_style) => {
+                            computed_style.apply_style(style.clone(), &selector.specificity(), node_handle.get(self.vdom.parser()))
+                        },
+                        None => {
+                            let complete_selector = match node_handle.get(self.vdom.parser()) {
+                                Some(node) => css::Selector::complete_selector(node),
+                                None => css::Selector::new(None, vec![], None)
+                            };
+                            let mut computed_style = css::ComputedStyle::new(complete_selector);
+                            computed_style.apply_style(style.clone(), &selector.specificity(), node_handle.get(self.vdom.parser()));
+                            self.computed_styles.insert(node_handle.clone(), computed_style);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Returns parsed css styles from style and link nodes.
+    pub fn read_styles(&self) -> Vec<Rc<css::Style>> {
+        let mut styles: Vec<Rc<css::Style>> = Vec::new();
         match self.vdom.query_selector("style") {
             Some(style_nodes) => {
                 for node_handle in style_nodes {
                     let style_node = node_handle.get(self.vdom.parser()).unwrap();
                     let style_text = style_node.inner_text(self.vdom.parser()).to_string();
-                    self.all_styles.append(&mut crate::css::parse_css(style_text.as_str()));
+                    styles.append(&mut css::parse_css(style_text.as_str()));
                 }
             },
             None => {}
@@ -69,8 +221,8 @@ impl Window<'_, '_, '_, '_> {
                     }
                     let mut path: std::path::PathBuf;
                     let mut path_str = path_opt.unwrap();
-                    if path_str.starts_with(".") && html_filename.is_some() {
-                        path = std::path::PathBuf::from(html_filename.unwrap());
+                    if path_str.starts_with(".") {
+                        path = std::path::PathBuf::from(self.html_file.as_str());
                         path.pop();
                         path.push(path_str);
                     } else {
@@ -79,7 +231,7 @@ impl Window<'_, '_, '_, '_> {
                     path_str = path.to_str().unwrap();
                     match std::fs::read_to_string(path_str) {
                         Ok(css_text) => {
-                            self.all_styles.append(&mut crate::css::parse_css(css_text.as_str()));
+                            styles.append(&mut css::parse_css(css_text.as_str()));
                         },
                         Err(_) => continue
                     }
@@ -87,6 +239,8 @@ impl Window<'_, '_, '_, '_> {
             },
             None => {}
         }
+
+        return styles;
     }
     
     /// Returns a vector of all node handles in the document. Sorted in tree order (root, child 1 of root, child 1 of child 1 of root, child 2 of child 1 of root, child 2 of root...).
@@ -107,130 +261,27 @@ impl Window<'_, '_, '_, '_> {
     }
 
     /// Computes the style for each node in the document and stores them in computed_styles.
-    fn compute_styles(&mut self, html_filename: Option<&str>) {
-        self.read_styles(html_filename);    
-        for style in self.all_styles.iter() {
-            for selector in style.selectors.iter() {
-                if let Some(nodes) = self.vdom.query_selector(selector.to_string().as_str()) {
-                    for node_handle in nodes {
-                        let node = node_handle.get(self.vdom.parser()).unwrap();
-                        match self.computed_styles.get_mut(&node_handle) {
-                            Some(computed_style) => {
-                                computed_style.apply_style(style.clone(), Some(node))
-                            },
-                            None => {
-                                let mut computed_style = crate::css::ComputedStyle::new(crate::css::Selector::complete_selector(node));
-                                computed_style.apply_style(style.clone(), Some(node));
-                                self.computed_styles.insert(node_handle, computed_style);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn sdl_window(&self) -> &sdl2::video::Window {
-        self.sdl_canvas.window()
-    }
-
-    /// Retrieves the top node at the given cursor position. None if the position is outside the canvas.
-    pub fn get_node_at(&self, x: i32, y: i32) -> Option<&tl::Node> {
-        if x < 0 || y < 0 || x >= (self.width as i32) || y >= (self.height as i32) {
-            return None;
-        }
-        match self.id_canvas.read_pixels(sdl2::rect::Rect::new(x, y, 1, 1), sdl2::pixels::PixelFormatEnum::RGBA8888)  {
-            Ok(pixel) => {
-                let id = pixel[0] as u32 + ((pixel[1] as u32) >> 8) + ((pixel[2] as u32) >> 16) + ((pixel[3] as u32) >> 24);
-                return tl::NodeHandle::new(id).get(self.vdom.parser());
-            },
-            Err(_) => None
-        }
-
-    }
-
-    /// Creates a new window and parses the given html.
-    pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
-        let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
-            .position_centered()
-            //.resizable()
-            .build()
-            .unwrap();
-        let canvas = sdl_window
-        .into_canvas()
-        .present_vsync()
-        .build().unwrap();
-        let mut w = Window {
-            ctx: ctx.clone(),
-            sdl_canvas: canvas,
-            id_canvas: sdl2::render::SurfaceCanvas::from_surface(sdl2::surface::Surface::new(options.width, options.height, sdl2::pixels::PixelFormatEnum::RGBA8888).unwrap()).unwrap(),
-            width: options.width,
-            height: options.height,
-            vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
-            all_styles: Vec::new(),
-            computed_styles: HashMap::new(),
-            computed_layouts: HashMap::new(),
-            pointer_down_events: event::GenericEventReceiver::new(),
-            pointer_up_events: event::GenericEventReceiver::new(),
-            pointer_move_events: event::GenericEventReceiver::new(),
-            scroll_events: event::GenericEventReceiver::new(),
-        };
-        w.compute_styles(html_filename);
-        w
-    }
-
-    /// Draws a quarter of a circle using midpoint circle algorithm.
-    fn draw_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) {
-        if r <= 0 {
-            return;
-        }
-        let mut x = r;
-        let mut y = 0;
-        let mut err = 0;
-        while x >= y {
-            self.sdl_canvas.set_draw_color(color);
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 + y * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 + x * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 + x * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 + y * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 - y * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 - x * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 - x * y_direction)).unwrap();
-            self.sdl_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 - y * y_direction)).unwrap();
-            self.id_canvas.set_draw_color(id_color);
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 + y * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 + x * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 + x * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 + y * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - x * x_direction, y0 - y * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 - y * x_direction, y0 - x * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + y * x_direction, y0 - x * y_direction)).unwrap();
-            self.id_canvas.draw_point(sdl2::rect::Point::new(x0 + x * x_direction, y0 - y * y_direction)).unwrap();
-            y += 1;
-            err += 1 + 2 * y;
-            if 2 * (err - x) + 1 > 0 {
-                x -= 1;
-                err += 1 - 2 * x;
-            }
+    fn compute_styles(&mut self) {
+        let styles = self.read_styles();
+        for style in styles.iter() {
+            self.apply_style(&style.clone());
         }
     }
 
     /// Fills a quarter of a circle using midpoint circle algorithm.
-    fn fill_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) {
-        let mut r_mut = r;
-        while r_mut > 0 {
-            self.draw_quarter_circle(x0, y0, r_mut, x_direction, y_direction, color, id_color);
-            r_mut -= 1;
-        }
+    fn fill_quarter_circle(&mut self, x0: i32, y0: i32, r: i32, x_direction: i32, y_direction: i32, color: sdl2::pixels::Color, id_color: sdl2::pixels::Color) -> util::DrawingResult {
+        util::fill_quarter_circle(x0, y0, r, x_direction, y_direction, color, &mut self.sdl_canvas)?;
+        util::fill_quarter_circle(x0, y0, r, x_direction, y_direction, id_color, &mut self.id_canvas)?;
+        Ok(util::DrawingSuccess {})
     }
 
     /// Draws the background of a node onto the window and the id canvas.
-    fn draw_background(&mut self, node_handle: tl::NodeHandle) -> Result<DrawingSuccess, DrawingError> {
+    fn draw_background(&mut self, node_handle: tl::NodeHandle) -> util::DrawingResult {
         if let Some(layout) = self.computed_layouts.get(&node_handle) {
             if let Some(style) = self.computed_styles.get(&node_handle) {
                 let (display, _) = style.get_value::<css::Display>("display");
                 if display.is_some() && display.unwrap() == css::Display::None {
-                    return Ok(DrawingSuccess {});
+                    return Ok(util::DrawingSuccess {});
                 }
                 let x = layout.get::<{LayoutValue::X as usize}>().ok_or(DrawingError { msg: "missing x".to_string() })?;
                 let y = layout.get::<{LayoutValue::Y as usize}>().ok_or(DrawingError { msg: "missing y".to_string() })?;
@@ -309,27 +360,27 @@ impl Window<'_, '_, '_, '_> {
 
                 // TODO how to handle decision between left and top border with?
                 if border_top_left_radius > 0 {
-                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, border_top_left_radius, -1, -1, border_top_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, border_top_left_radius, -1, -1, border_top_color.sdl_color, id_color)?;
                     let inner_top_left_radius = if border_top_left_radius > border_top_width { border_top_left_radius - border_top_width } else { 0 };
-                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, inner_top_left_radius, -1, -1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset, inner_top_left_radius, -1, -1, background_color.sdl_color, id_color)?;
                 } else {
                     let top_left_rect = sdl2::rect::Rect::new(x, y, left_x_offset as u32, top_y_offset as u32);
                     self.sdl_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
                     self.id_canvas.fill_rect(top_left_rect).map_err(|msg| DrawingError {msg})?;
                 }
                 if border_bottom_left_radius > 0 {
-                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, border_bottom_left_radius, -1, 1, border_bottom_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, border_bottom_left_radius, -1, 1, border_bottom_color.sdl_color, id_color)?;
                     let inner_bottom_left_radius = if border_bottom_left_radius > border_bottom_width { border_bottom_left_radius - border_bottom_width } else { 0 };
-                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_bottom_left_radius, -1, 1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset, y + top_y_offset + inner_height as i32, inner_bottom_left_radius, -1, 1, background_color.sdl_color, id_color)?;
                 } else {
                     let bottom_left_rect = sdl2::rect::Rect::new(x, y + top_y_offset + inner_height as i32, left_x_offset as u32, bottom_y_offset as u32);
                     self.sdl_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
                     self.id_canvas.fill_rect(bottom_left_rect).map_err(|msg| DrawingError {msg})?;
                 }
                 if border_top_right_radius > 0 {
-                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, border_top_right_radius, 1, -1, border_top_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, border_top_right_radius, 1, -1, border_top_color.sdl_color, id_color)?;
                     let inner_top_right_radius = if border_top_right_radius > border_top_width { border_top_right_radius - border_top_width } else { 0 };
-                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, inner_top_right_radius, 1, -1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset, inner_top_right_radius, 1, -1, background_color.sdl_color, id_color)?;
                 } else {
                     let top_right_rect = sdl2::rect::Rect::new(x + left_x_offset + inner_width as i32, y, right_x_offset as u32, top_y_offset as u32);
                     self.sdl_canvas.fill_rect(top_right_rect).map_err(|msg| DrawingError {msg})?;
@@ -338,10 +389,10 @@ impl Window<'_, '_, '_, '_> {
                 }
                 if border_bottom_right_radius > 0 {
                     // draw borders in corner
-                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, border_bottom_right_radius, 1, 1, border_bottom_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, border_bottom_right_radius, 1, 1, border_bottom_color.sdl_color, id_color)?;
                     let inner_bottom_right_radius = if border_bottom_right_radius > border_bottom_width { border_bottom_right_radius - border_bottom_width } else { 0 };
                     // fill corner background
-                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, inner_bottom_right_radius, 1, 1, background_color.sdl_color, id_color);
+                    self.fill_quarter_circle(x + left_x_offset + inner_width as i32, y + top_y_offset + inner_height as i32, inner_bottom_right_radius, 1, 1, background_color.sdl_color, id_color)?;
                 } else {
                     // fill corner background
                     self.sdl_canvas.set_draw_color(background_color.sdl_color);
@@ -358,69 +409,49 @@ impl Window<'_, '_, '_, '_> {
                     self.id_canvas.fill_rect(border_bottom_right_right_rect).map_err(|msg| DrawingError {msg})?;
                 }
 
-                return Ok(DrawingSuccess {});
+                return Ok(util::DrawingSuccess {});
             }
         }
         Err(DrawingError {msg: "no layout or style".to_string()})
     }
 
-    /// Calculates layout information for the whole document.
-    pub fn layout(&mut self) {
-        let all_handles = self.get_all_handles(self.vdom.children(), None);
-        for (node_handle, parent_handle) in all_handles.iter() {
-            if !self.computed_layouts.contains_key(&node_handle) {
-                self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
-            }
-            self.layout_element_font_size(*node_handle, *parent_handle);
-            // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
-            self.layout_element_top_down(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle, *parent_handle);
-            self.layout_element_border(*node_handle, *parent_handle);
-            self.layout_element_margin(*node_handle, *parent_handle);
-        }
-        for (node_handle, parent_handle) in all_handles.iter().rev() {
-            // Second attempt to calculate boxes. 
-            // If the content's boxes were calculated in the first attempt 
-            // (or a previous call of this attempt, which is why it's reversed), 
-            // content-based boxes can now be calculated.
-            self.layout_element_bottom_up(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle, *parent_handle);
-            self.layout_element_border(*node_handle, *parent_handle);
-            self.layout_element_margin(*node_handle, *parent_handle);
-        }
-        // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
-        // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
-        // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
-        for (node_handle, parent_handle) in all_handles.iter() {
-            self.layout_mask_top_down(*node_handle, *parent_handle);
-            if let Some(layout) = self.computed_layouts.get(node_handle) {
-                if let Some(style) = self.computed_styles.get(node_handle) {
-                    if let Some(node) = node_handle.get(self.vdom.parser()) {
-                        if let Some(tag) = node.as_tag() {
-                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
+    /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
+    fn draw_element(&mut self, node_handle: &tl::NodeHandle) -> util::DrawingResult {
+        self.draw_background(node_handle.clone())?;
+        if let Some(node) = node_handle.get(self.vdom.parser()) {
+            if let Some(style) = self.computed_styles.get(node_handle) {
+                if let Some(layout) = self.computed_layouts.get(node_handle) {
+                    // TODO mask layout
+                    let x = layout.get::<{LayoutValue::X as usize}>().ok_or(DrawingError{msg: "missing x".to_string()})?;
+                    let y = layout.get::<{LayoutValue::Y as usize}>().ok_or(DrawingError{msg: "missing y".to_string()})?;
+                    let width = layout.get::<{LayoutValue::Width as usize}>().ok_or(DrawingError{msg: "missing width".to_string()})?;
+                    //let height = layout.get::<{LayoutValue::Height as usize}>().ok_or(DrawingError{msg: "missing height".to_string()})?;
+                    let font_size = layout.get::<{LayoutValue::FontSize as usize}>().ok_or(DrawingError{msg: "missing font size".to_string()})?;
+                    // Draw text
+                    let text = node.inner_text(self.vdom.parser()).to_string();
+                    let (font_family_opt, _) = style.get_value::<String>("font-family");
+                    let (font_color_opt, _) = style.get_value::<css::CssColor>("color");
+                    if font_family_opt.is_some() && font_color_opt.is_some() {
+                        println!("Drawing text");
+                        let font_family = font_family_opt.unwrap();
+                        let font_color = font_color_opt.unwrap();
+                        println!("Font: {:?} {:?}", font_family, font_color);
+                        self.sdl_canvas.set_draw_color(font_color.sdl_color);
+                        for font_name in font_family.split(',') {
+                            let font_name = font_name.trim();
+                            if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
+                                println!("Found font: {:?}", font_name);
+                                let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
+                                font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
+                                break;
+                            }
                         }
                     }
+                    return Ok(util::DrawingSuccess {});
                 }
             }
         }
-    }
-
-    pub fn draw(&mut self) {
-        
-        // TODO: Optimize this (vdom.nodes() gives references to nodes but nodes cant hash, and there is no good way to get a node handle from a node. computing styles while collecting the node handles is not possible because...
-        // we need to get the node out of the node handle to check if a style matches and to get it's children, but to get the node it is neccessary to borrow the self.vdom.parser() which means we cant borrow self as mutable at the same time, which
-        // happen if we would recursively compute the styles for the node's children. Therefore all node handles are currently collected before computing the styles, and then we traverse the whole tree again to compute the styles.
-        // There MUST be a better way to do this.
-        
-        // TODO optimize this (problem see above)
-        let all_handles = self.get_all_handles(self.vdom.children(), None);
-        for (node_handle, _parent_handle) in all_handles {
-            match self.draw_element(&node_handle) {
-                Ok(_) => {},
-                Err(_err) => {}
-            }
-        }
-        self.sdl_canvas.present();
+        Err(DrawingError{msg: "failed to draw element".to_string()})
     }
 
     /// Calculate the pixel value for the given unit value, if it is either fixed or depends on the parent. Otherwise returns None (i.e. for fit-content).
@@ -480,7 +511,7 @@ impl Window<'_, '_, '_, '_> {
         }
     }
 
-    /// Sets a layout value using calc_size_top_down. If the value is already set, it will not be overwritten.
+    /// Sets a layout value using self.calc_size_top_down. If the value is already set, it will not be overwritten.
     /// - property [&str]: CSS property name.
     /// - node_handle [&tl::NodeHandle]: Node handle.
     /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
@@ -789,44 +820,5 @@ impl Window<'_, '_, '_, '_> {
         //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
         //     // }
         // }
-    }
-
-    /// Draws a node into this window's canvas. The node has to be part of this window's vdom.
-    fn draw_element(&mut self, node_handle: &tl::NodeHandle) -> Result<DrawingSuccess, DrawingError> {
-        self.draw_background(node_handle.clone())?;
-        if let Some(node) = node_handle.get(self.vdom.parser()) {
-            if let Some(style) = self.computed_styles.get(node_handle) {
-                if let Some(layout) = self.computed_layouts.get(node_handle) {
-                    // TODO mask layout
-                    let x = layout.get::<{LayoutValue::X as usize}>().ok_or(DrawingError{msg: "missing x".to_string()})?;
-                    let y = layout.get::<{LayoutValue::Y as usize}>().ok_or(DrawingError{msg: "missing y".to_string()})?;
-                    let width = layout.get::<{LayoutValue::Width as usize}>().ok_or(DrawingError{msg: "missing width".to_string()})?;
-                    //let height = layout.get::<{LayoutValue::Height as usize}>().ok_or(DrawingError{msg: "missing height".to_string()})?;
-                    let font_size = layout.get::<{LayoutValue::FontSize as usize}>().ok_or(DrawingError{msg: "missing font size".to_string()})?;
-                    // Draw text
-                    let text = node.inner_text(self.vdom.parser()).to_string();
-                    let (font_family_opt, _) = style.get_value::<String>("font-family");
-                    let (font_color_opt, _) = style.get_value::<css::CssColor>("color");
-                    if font_family_opt.is_some() && font_color_opt.is_some() {
-                        println!("Drawing text");
-                        let font_family = font_family_opt.unwrap();
-                        let font_color = font_color_opt.unwrap();
-                        println!("Font: {:?} {:?}", font_family, font_color);
-                        self.sdl_canvas.set_draw_color(font_color.sdl_color);
-                        for font_name in font_family.split(',') {
-                            let font_name = font_name.trim();
-                            if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
-                                println!("Found font: {:?}", font_name);
-                                let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
-                                font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
-                                break;
-                            }
-                        }
-                    }
-                    return Ok(DrawingSuccess {});
-                }
-            }
-        }
-        Err(DrawingError{msg: "failed to draw element".to_string()})
     }
 }
