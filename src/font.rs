@@ -132,7 +132,6 @@ impl<'a> Font<'a> {
             let ver_advance_f = face.units_per_em() as f32;
             for c in text.chars() {
                 if let Some(glyph_id) = face.glyph_index(c) {
-                    i += 1;
                     if break_on.contains(&c) {
                         break_x = x;
                         break_i = i;
@@ -170,6 +169,7 @@ impl<'a> Font<'a> {
                         x += hor_advance;
                         cur_line.push(c);
                     }
+                    i += 1;
                 }
             }
             lines.push(cur_line.clone());
