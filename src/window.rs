@@ -249,7 +249,7 @@ impl Window<'_, '_, '_, '_> {
             }
             self.layout_element_font_size(*node_handle);
             // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
-            self.layout_element_top_down(*node_handle);
+            self.layout_element_top_down_width_and_height(*node_handle);
             self.layout_element_padding(*node_handle);
             self.layout_element_border(*node_handle);
             self.layout_element_margin(*node_handle);
@@ -445,15 +445,14 @@ impl Window<'_, '_, '_, '_> {
                     let (font_family_opt, _) = style.get_value::<String>("font-family");
                     let (font_color_opt, _) = style.get_value::<css::CssColor>("color");
                     if font_family_opt.is_some() && font_color_opt.is_some() {
-                        println!("Drawing text");
                         let font_family = font_family_opt.unwrap();
                         let font_color = font_color_opt.unwrap();
-                        println!("Font: {:?} {:?}", font_family, font_color);
+                        //println!("Font: {:?} {:?}", font_family, font_color);
                         self.sdl_canvas.set_draw_color(font_color.sdl_color);
                         for font_name in font_family.split(',') {
                             let font_name = font_name.trim();
                             if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
-                                println!("Found font: {:?}", font_name);
+                                //println!("Found font: {:?}", font_name);
                                 let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
                                 font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
                                 break;
@@ -574,37 +573,22 @@ impl Window<'_, '_, '_, '_> {
     }
 
     /// Determines width and height if they are based on the parent, or fixed.
-    fn layout_element_top_down(&mut self, node_handle: tl::NodeHandle) {
-        if let Some(style) = self.computed_styles.get(&node_handle) {
-            // println!("layout_element_top_down: {:?} style {:?}", node_handle, style);
-            let (display, _) = style.get_value::<css::Display>("display");
+    fn layout_element_top_down_width_and_height(&mut self, node_handle: tl::NodeHandle) {
+        if let Some(display) = self.computed_styles.get(&node_handle).map_or(None, |s| s.get_value::<css::Display>("display").0) {
             match display {
-                Some(css::Display::None) => {
+                css::Display::None => {
                     if let Some(node_layout) = self.computed_layouts.get_mut(&node_handle) {
                         node_layout.set::<{LayoutValue::Width as usize}>(Some(0));
                         node_layout.set::<{LayoutValue::Height as usize}>(Some(0));
                     }
                 },
-                Some(css::Display::Block) | Some(css::Display::InlineBlock) => {
-                    let (width, width_unit) = style.get_value::<f32>("width");
-                    let px_width = self.calc_size_top_down::<{LayoutValue::Width as usize}>(width, width_unit, node_handle);
-                    let (height, height_unit) = style.get_value::<f32>("height");
-                    let px_height = self.calc_size_top_down::<{LayoutValue::Height as usize}>(height, height_unit, node_handle);
-                    if let Some(node_layout) = self.computed_layouts.get_mut(&node_handle) {
-                        node_layout.set::<{LayoutValue::Width as usize}>(px_width);
-                        node_layout.set::<{LayoutValue::Height as usize}>(px_height);
-                    }
+                css::Display::Block | css::Display::InlineBlock => {
+                    self.set_size_value_top_down::<{LayoutValue::Width as usize}>(node_handle);
+                    self.set_size_value_top_down::<{LayoutValue::Height as usize}>(node_handle);
                 },
-                Some(css::Display::Flex) => {
-                    // TODO implement flex layoutg
-                },
-                Some(css::Display::Grid) => {
-                    // TODO implement grid layout
-                },
+                // TODO implement other display types (flex, grid)
                 _ => {}
-            }
-        } else {
-            self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
+            }   
         }
     }
      
