@@ -6,8 +6,12 @@ use cssparser::BasicParseError;
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-/// An error which occured while parsing a Unit from a string.
-pub struct CssUnitParseError;
+/// Error which occured while parsing a css.
+#[derive(Debug, PartialEq, Clone)]
+pub struct CssParseError {
+    pub css: String,
+    pub message: String,
+}
 
 /// Unit of a css value.
 #[derive(Debug, PartialEq, EnumIter)]
@@ -50,7 +54,7 @@ impl ToString for Unit {
 }
 
 impl FromStr for Unit {
-    type Err = CssUnitParseError;
+    type Err = CssParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -68,12 +72,10 @@ impl FromStr for Unit {
             "in" => Ok(Unit::In),
             "pc" => Ok(Unit::Pc),
             "fr" => Ok(Unit::Fr),
-            _ => Err(CssUnitParseError {}),
+            _ => Err(CssParseError { css: s.to_string(), message: "unknwon unit".to_string() }),
         }
     }
 }
-
-pub struct CssValueParseError;
 
 #[derive(Debug, PartialEq)]
 pub enum BoxSizing {
@@ -91,13 +93,13 @@ impl ToString for BoxSizing {
 }
 
 impl FromStr for BoxSizing {
-    type Err = CssValueParseError;
+    type Err = CssParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "content-box" => Ok(BoxSizing::ContentBox),
             "border-box" => Ok(BoxSizing::BorderBox),
-            _ => Err(CssValueParseError {}),
+            _ => Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() }),
         }
     }
 }
@@ -126,7 +128,7 @@ impl ToString for Display {
 }
 
 impl FromStr for Display {
-    type Err = CssValueParseError;
+    type Err = CssParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -136,7 +138,7 @@ impl FromStr for Display {
             "flex" => Ok(Display::Flex),
             "grid" => Ok(Display::Grid),
             "none" => Ok(Display::None),
-            _ => Err(CssValueParseError {}),
+            _ => Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() }),
         }
     }
 }
@@ -161,7 +163,7 @@ impl ToString for FlexDirection {
 }
 
 impl FromStr for FlexDirection {
-    type Err = CssValueParseError;
+    type Err = CssParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -169,7 +171,7 @@ impl FromStr for FlexDirection {
             "row-reverse" => Ok(FlexDirection::RowReverse),
             "column" => Ok(FlexDirection::Column),
             "column-reverse" => Ok(FlexDirection::ColumnReverse),
-            _ => Err(CssValueParseError {}),
+            _ => Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() }),
         }
     }
 }
@@ -363,10 +365,6 @@ impl ToString for Selector {
     }
 }
 
-/// An error which occured while parsing a Color from a string.
-#[derive(Debug)]
-pub struct CssColorParseError;
-
 /// Use this type to retrieve colors from styles.
 #[derive(Debug, PartialEq, Clone)]
 pub struct CssColor {
@@ -374,6 +372,7 @@ pub struct CssColor {
 }
 
 impl FromStr for CssColor {
+    type Err = CssParseError;
     /// Parses a color from a CSS color value. Only hex colors (no shorthand formats) are supported (yet).
     /// ```
     /// use yargl::css::CssColor;
@@ -396,20 +395,19 @@ impl FromStr for CssColor {
                 for _ in 0..2 {
                     match chars.next() {
                         Some(ch) => hex.push(ch),
-                        None => return Err(CssColorParseError {})
+                        None => return Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() })
                     }
                 }
                 match u8::from_str_radix(&hex, 16) {
                     Ok(num) => color.push(num),
-                    Err(_) => return Err(CssColorParseError {})
+                    Err(_) => return Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() })
                 }
             }
             Ok(CssColor { sdl_color: sdl2::pixels::Color::RGB(color[0], color[1], color[2]) })
         } else {
-            Err(CssColorParseError {})
+            Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() })
         }
     }
-    type Err = CssColorParseError;
 }
 
 #[derive(Debug)]
@@ -582,12 +580,12 @@ impl ToString for ComputedStyle {
 
 /// Parses style rules from css.
 /// 
-/// Supports: Basic selectors (tag, multiple classes, id), Multiple selectors for one style, Units, Hex colors
+/// - css [&str]: CSS-formatted string
 /// 
-/// TODO: Pseudo-classes, Pseudo-elements, Attribute selectors, Combinators, Media queries, Keyframes, Animations, Transitions, Variables, Functions, Calc, etc.
+/// Supports: Comments, Basic selectors (tag, multiple classes, id), Multiple selectors for one style (comma-separated), Units, Hex colors (no shorthand)
 /// 
-/// TODO: needs better error handling
-pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
+// TODO: Pseudo-classes, Pseudo-elements, Attribute selectors, Combinators, Media queries, Keyframes, Animations, Transitions, Variables, Functions, Calc, etc.
+pub fn parse_css(css: &str) -> Result<Vec<Rc<Style>>, CssParseError> {
     let mut parser_input = cssparser::ParserInput::new(css);
     let mut parser = cssparser::Parser::new(&mut parser_input);
     let mut sheet: Vec<Rc<Style>> = Vec::new();
@@ -623,7 +621,7 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                     cssparser::Token::CurlyBracketBlock => {
                         selectors.push(current_selector.clone());
                         current_selector = Selector::new(None, Vec::new(), None);
-                        // Parse Style
+                        // Parse Style block
                         let style_result = parser.parse_nested_block(|block_parser| {
                             let mut style = Style {
                                 selectors: Vec::new(),
@@ -705,7 +703,7 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                                                 property_name.clear();
                                                 property_value.clear();
                                             },
-                                            // This error is only thrown so that rust can infer the error type
+                                            // This error is only handled so that rust can infer the error type
                                             cssparser::Token::BadString(_) => {
                                                 return Err::<Style, cssparser::ParseError<'_, BasicParseError>>(cssparser::ParseError {
                                                     kind: cssparser::ParseErrorKind::Custom(cssparser::BasicParseError {
@@ -727,17 +725,24 @@ pub fn parse_css(css: &str)-> Vec<Rc<Style>> {
                                 sheet.push(Rc::new(style));
                             },
                             Err(parse_error) => {
-                                println!("Error parsing css style: {:?}", parse_error);
-                                break;
+                                return Err(CssParseError { 
+                                    css: "{".to_string(), 
+                                    message: format!("Error inside style block: {:?} (in line {}:{})", parse_error.kind, parse_error.location.line, parse_error.location.column)
+                                });
                             }
                         }
                     },
-                    cssparser::Token::CloseCurlyBracket => {},
+                    cssparser::Token::CloseCurlyBracket => {
+                        return Err(CssParseError { css: "}".to_string(), message: "Unexpected token".to_string() });
+                    },
+                    cssparser::Token::BadString(s) => {
+                        return Err(CssParseError { css: s.to_string(), message: "Bad string".to_string() });
+                    },
                     _ => {}
                 }
             },
             Err(_) => break
         }
     }
-    sheet
+    Ok(sheet)
 }

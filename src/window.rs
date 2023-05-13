@@ -192,7 +192,10 @@ impl Window<'_, '_, '_, '_> {
                 for node_handle in style_nodes {
                     let style_node = node_handle.get(self.vdom.parser()).unwrap();
                     let style_text = style_node.inner_text(self.vdom.parser()).to_string();
-                    styles.append(&mut css::parse_css(style_text.as_str()));
+                    match css::parse_css(style_text.as_str()) {
+                        Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
+                        Err(_err) => {}
+                    }
                 }
             },
             None => {}
@@ -227,8 +230,9 @@ impl Window<'_, '_, '_, '_> {
                     }
                     path_str = path.to_str().unwrap();
                     match std::fs::read_to_string(path_str) {
-                        Ok(css_text) => {
-                            styles.append(&mut css::parse_css(css_text.as_str()));
+                        Ok(css_text) => match css::parse_css(css_text.as_str()) {
+                            Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
+                            Err(_) => continue
                         },
                         Err(_) => continue
                     }
