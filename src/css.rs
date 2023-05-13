@@ -474,43 +474,6 @@ impl Style {
         }
         self.properties.insert(property.to_string(), value.to_string());
     }
-    /// Checks if one of the selectors of this style matches the given node.
-    pub fn matches(&self, node: &tl::Node) -> bool {
-        let node_selector = Selector::complete_selector(node);
-        for style_selector in &self.selectors {
-            if style_selector.matches(&node_selector.tag_name, &node_selector.class_list, &node_selector.id, Some(node)) {
-                return true;
-            }
-        }
-        return false;
-    }
-    /// Returns the matching selector with the highest specificity, or None if no selector matches.
-    /// ```
-    /// use yargl::css::{Style, parse_css, Selector};
-    /// use std::vec::Vec;
-    /// use std::collections::HashMap;
-    /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; }");
-    /// let mut style = styles.remove(0);
-    /// let selector1 = style.get_matching_selector_with_highest_specificity(&None, &vec!["a".to_string(), "c".to_string()], &None, None);
-    /// assert!(selector1.is_some());
-    /// assert_eq!(selector1.unwrap(), Selector { tag_name: "div", class_list: vec!["a".to_string()], id: None });
-    /// let selector2 = style.get_matching_selector_with_highest_specificity(&Some("div".to_string()), &vec!["c".to_string()], &Some("b".to_string()), None);
-    /// assert!(selector2.is_some());
-    /// assert_eq!(selector2.unwrap(), Selector { tag_name: None, class_list: vec![], id: Some("b".to_string()) });
-    /// let selector3 = style.get_matching_selector_with_highest_specificity(&Some("p".to_string()), &vec!["x".to_string()], &None, None);
-    /// assert!(selector3.is_none());
-    /// ```
-    pub fn get_matching_selector_with_highest_specificity(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, node: Option<&tl::Node>) -> Option<&Selector> {
-        let mut selected_selector: Option<&Selector> = None;
-        for selector in &self.selectors {
-            if selector.matches(tag_name, class_list, id, node) {
-                if selected_selector.is_none() || selector.specificity() > selected_selector.unwrap().specificity() {
-                    selected_selector = Some(selector);
-                }
-            }
-        }
-        selected_selector
-    }
 }
 
 #[derive(Debug)]
@@ -575,7 +538,7 @@ impl ComputedStyle {
     /// computed_style.apply_style(style2, None);
     /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(200.0), Some(Unit::Px)));
     /// ```
-    pub fn apply_style(&mut self, style: Rc<Style>, specificity: &Specificity, node: Option<&tl::Node>) {
+    pub fn apply_style(&mut self, style: Rc<Style>, specificity: &Specificity) {
         for (property, _value) in style.properties.iter() {
             match self.properties.get(property) {
                 Some(old_style) => {

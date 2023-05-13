@@ -66,7 +66,6 @@ impl Window<'_, '_, '_, '_> {
             None => None
         }
     }
-
     /// Retrieves the handle of the top node at the given cursor position. None if the position is outside the canvas.
     pub fn get_node_handle_at(&self, x: i32, y: i32) -> Option<tl::NodeHandle> {
         if x < 0 || y < 0 || x >= (self.width as i32) || y >= (self.height as i32) {
@@ -81,12 +80,10 @@ impl Window<'_, '_, '_, '_> {
         }
 
     }
-
     /// Get the underlying sdl window.
     pub fn sdl_window(&self) -> &sdl2::video::Window {
         self.sdl_canvas.window()
     }
-
     /// Viewport width.
     pub fn width(&self) -> u32 {
         self.width
@@ -170,7 +167,7 @@ impl Window<'_, '_, '_, '_> {
                 for node_handle in nodes {
                     match self.computed_styles.get_mut(&node_handle) {
                         Some(computed_style) => {
-                            computed_style.apply_style(style.clone(), &selector.specificity(), node_handle.get(self.vdom.parser()))
+                            computed_style.apply_style(style.clone(), &selector.specificity())
                         },
                         None => {
                             let complete_selector = match node_handle.get(self.vdom.parser()) {
@@ -178,7 +175,7 @@ impl Window<'_, '_, '_, '_> {
                                 None => css::Selector::new(None, vec![], None)
                             };
                             let mut computed_style = css::ComputedStyle::new(complete_selector);
-                            computed_style.apply_style(style.clone(), &selector.specificity(), node_handle.get(self.vdom.parser()));
+                            computed_style.apply_style(style.clone(), &selector.specificity());
                             self.computed_styles.insert(node_handle.clone(), computed_style);
                         }
                     }
