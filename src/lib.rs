@@ -43,7 +43,6 @@ mod tests {
             }
             return EventReturnCode::Continue;
         });
-        window.layout();
         window.draw();
         all_windows.push(window);
         loop {

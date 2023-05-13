@@ -20,6 +20,7 @@ pub struct Window<'a, 'f, 'ff, 's> {
     height: u32,
     html_file: String,
     vdom: VDom<'a>,
+    computed_parents: HashMap<tl::NodeHandle, Option<tl::NodeHandle>>,
     computed_styles: HashMap<tl::NodeHandle, css::ComputedStyle>,
     computed_layouts: HashMap<tl::NodeHandle, NodeLayoutInfo>,
     pub pointer_down_events: event::GenericEventReceiver<event::PointerDownEvent>,
@@ -48,6 +49,7 @@ impl Window<'_, '_, '_, '_> {
             height: options.height,
             vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
             html_file: html_filename.unwrap_or("").to_string(),
+            computed_parents: HashMap::new(),
             computed_styles: HashMap::new(),
             computed_layouts: HashMap::new(),
             pointer_down_events: event::GenericEventReceiver::new(),
@@ -55,7 +57,9 @@ impl Window<'_, '_, '_, '_> {
             pointer_move_events: event::GenericEventReceiver::new(),
             scroll_events: event::GenericEventReceiver::new(),
         };
+        w.compute_parents();
         w.compute_styles();
+        w.compute_layout();
         w
     }
 
@@ -113,48 +117,6 @@ impl Window<'_, '_, '_, '_> {
             }
         }
         self.sdl_canvas.present();
-    }
-
-    /// Re-Calculates layout information for every node in the document.
-    pub fn layout(&mut self) {
-        self.computed_layouts.clear();
-        let all_handles = self.get_all_handles(self.vdom.children(), None);
-        for (node_handle, parent_handle) in all_handles.iter() {
-            if !self.computed_layouts.contains_key(&node_handle) {
-                self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
-            }
-            self.layout_element_font_size(*node_handle, *parent_handle);
-            // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
-            self.layout_element_top_down(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle, *parent_handle);
-            self.layout_element_border(*node_handle, *parent_handle);
-            self.layout_element_margin(*node_handle, *parent_handle);
-        }
-        for (node_handle, parent_handle) in all_handles.iter().rev() {
-            // Second attempt to calculate boxes. 
-            // If the content's boxes were calculated in the first attempt 
-            // (or a previous call of this attempt, which is why it's reversed), 
-            // content-based boxes can now be calculated.
-            self.layout_element_bottom_up(*node_handle, *parent_handle);
-            self.layout_element_padding(*node_handle, *parent_handle);
-            self.layout_element_border(*node_handle, *parent_handle);
-            self.layout_element_margin(*node_handle, *parent_handle);
-        }
-        // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
-        // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
-        // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
-        for (node_handle, parent_handle) in all_handles.iter() {
-            self.layout_mask_top_down(*node_handle, *parent_handle);
-            if let Some(layout) = self.computed_layouts.get(node_handle) {
-                if let Some(style) = self.computed_styles.get(node_handle) {
-                    if let Some(node) = node_handle.get(self.vdom.parser()) {
-                        if let Some(tag) = node.as_tag() {
-                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// Applies the given style to all nodes that match the style's selector.
@@ -266,6 +228,56 @@ impl Window<'_, '_, '_, '_> {
         let styles = self.read_styles();
         for style in styles.iter() {
             self.apply_style(&style.clone());
+        }
+    }
+
+    /// Stores the parent node of each node.
+    fn compute_parents(&mut self) {
+        let all_handles = self.get_all_handles(self.vdom.children().iter(), None);
+        for (node_handle, parent_handle) in all_handles {
+            self.computed_parents.insert(node_handle, parent_handle);
+        }
+    }
+
+    /// Re-Calculates layout information for every node in the document.
+    fn compute_layout(&mut self) {
+        self.computed_layouts.clear();
+        let all_handles = self.get_all_handles(self.vdom.children(), None);
+        for (node_handle, _) in all_handles.iter() {
+            if !self.computed_layouts.contains_key(&node_handle) {
+                self.computed_layouts.insert(node_handle.clone(), NodeLayoutInfo::new());
+            }
+            self.layout_element_font_size(*node_handle);
+            // First attempt to calculate boxes. Cannot calculate content-based boxes yet.
+            self.layout_element_top_down(*node_handle);
+            self.layout_element_padding(*node_handle);
+            self.layout_element_border(*node_handle);
+            self.layout_element_margin(*node_handle);
+        }
+        for (node_handle, _) in all_handles.iter().rev() {
+            // Second attempt to calculate boxes. 
+            // If the content's boxes were calculated in the first attempt 
+            // (or a previous call of this attempt, which is why it's reversed), 
+            // content-based boxes can now be calculated.
+            self.layout_element_bottom_up(*node_handle);
+            self.layout_element_padding(*node_handle);
+            self.layout_element_border(*node_handle);
+            self.layout_element_margin(*node_handle);
+        }
+        // Now everything should be calculated, any uncalculated values (due to user error) are set to 0.
+        // Therefore we can now calculate which parts are hidden behind others and add scrollbars where neccessary.
+        // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
+        for (node_handle, _) in all_handles.iter() {
+            self.layout_mask_top_down(*node_handle);
+            if let Some(layout) = self.computed_layouts.get(node_handle) {
+                if let Some(style) = self.computed_styles.get(node_handle) {
+                    if let Some(node) = node_handle.get(self.vdom.parser()) {
+                        if let Some(tag) = node.as_tag() {
+                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -462,7 +474,7 @@ impl Window<'_, '_, '_, '_> {
     /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
     /// 
     /// Returns [Option< i32 >]: Pixel value.
-    fn calc_size_top_down<const WHICH: usize>(&self, value: Option<f32>, unit: Option<css::Unit>, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) -> Option<i32> {
+    fn calc_size_top_down<const WHICH: usize>(&self, value: Option<f32>, unit: Option<css::Unit>, node_handle: tl::NodeHandle) -> Option<i32> {
         // magic numbers from https://developer.mozilla.org/en-US/docs/Learn/CSS/Building_blocks/Values_and_units
         match unit {
             Some(css::Unit::Px) => Some(value.unwrap_or(0.0) as i32),
@@ -485,7 +497,7 @@ impl Window<'_, '_, '_, '_> {
                     .map_or(None, |l| l.get::<{LayoutValue::Width as usize}>())
                     .map_or(None, |w| Some((value.unwrap_or(0.0) * (w as f32) / 100.0) as i32)),
                 // other relative properties are calculated relative to the same property on the parent
-                _ => match parent_handle {
+                _ => match self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()) {
                     Some(p) => self.computed_layouts.get(&p)
                     .map_or(None, |l| Some(l.get::<{WHICH}>()))
                     .map_or(None, |v| v)
@@ -499,7 +511,8 @@ impl Window<'_, '_, '_, '_> {
             },
             Some(css::Unit::Em) => match LayoutValue::from(WHICH) {
                 // font-size in em is calculated relative to the parent's font-size
-                LayoutValue::FontSize => parent_handle
+                LayoutValue::FontSize => self.computed_parents.get(&node_handle)
+                    .map_or(None, |v| v.as_ref())
                     .map_or(None, |p| self.computed_layouts.get(&p))
                     .map_or(None, |l| l.get::<{LayoutValue::FontSize as usize}>())
                     .map_or(None, |v| Some((value.unwrap_or(0.0) * (v as f32)) as i32)),
@@ -516,52 +529,52 @@ impl Window<'_, '_, '_, '_> {
     /// - property [&str]: CSS property name.
     /// - node_handle [&tl::NodeHandle]: Node handle.
     /// - parent_handle [Option<&tl::NodeHandle>]: Parent node handle.
-    fn set_size_value_top_down<const WHICH: usize>(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+    fn set_size_value_top_down<const WHICH: usize>(&mut self, node_handle: tl::NodeHandle) {
         if self.computed_layouts.get(&node_handle).map_or(None, |l| l.get::<{WHICH}>()).is_some() {
             return;
         }
         if let Some(style) = self.computed_styles.get(&node_handle) {
             let (value, unit) = style.get_value::<f32>(LayoutValue::from(WHICH).to_string().as_str());
-            let value = self.calc_size_top_down::<{WHICH}>(value, unit, node_handle, parent_handle);
+            let value = self.calc_size_top_down::<{WHICH}>(value, unit, node_handle);
             self.computed_layouts.get_mut(&node_handle).map(|l| l.set::<{WHICH}>(value));
         }
     }
 
     /// Attempts to calculate an element's font size.
-    fn layout_element_font_size(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
-        self.set_size_value_top_down::<{LayoutValue::FontSize as usize}>(node_handle, parent_handle);
+    fn layout_element_font_size(&mut self, node_handle: tl::NodeHandle) {
+        self.set_size_value_top_down::<{LayoutValue::FontSize as usize}>(node_handle);
     }
 
     /// Attempts to calculate an element's padding values.
-    fn layout_element_padding(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
-        self.set_size_value_top_down::<{LayoutValue::PaddingTop as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::PaddingRight as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::PaddingBottom as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::PaddingLeft as usize}>(node_handle, parent_handle);
+    fn layout_element_padding(&mut self, node_handle: tl::NodeHandle) {
+        self.set_size_value_top_down::<{LayoutValue::PaddingTop as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingRight as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingBottom as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::PaddingLeft as usize}>(node_handle);
     }
 
     /// Attemps to calculate an element's border widths.
-    fn layout_element_border(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
-        self.set_size_value_top_down::<{LayoutValue::BorderTopWidth as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderRightWidth as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomWidth as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderLeftWidth as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderTopLeftRadius as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderTopRightRadius as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomRightRadius as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::BorderBottomLeftRadius as usize}>(node_handle, parent_handle);
+    fn layout_element_border(&mut self, node_handle: tl::NodeHandle) {
+        self.set_size_value_top_down::<{LayoutValue::BorderTopWidth as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderRightWidth as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomWidth as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderLeftWidth as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderTopLeftRadius as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderTopRightRadius as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomRightRadius as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::BorderBottomLeftRadius as usize}>(node_handle);
     }
 
     /// Attempts to calculate an element's margin values.
-    fn layout_element_margin(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
-        self.set_size_value_top_down::<{LayoutValue::MarginTop as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::MarginRight as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::MarginBottom as usize}>(node_handle, parent_handle);
-        self.set_size_value_top_down::<{LayoutValue::MarginLeft as usize}>(node_handle, parent_handle);
+    fn layout_element_margin(&mut self, node_handle: tl::NodeHandle) {
+        self.set_size_value_top_down::<{LayoutValue::MarginTop as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginRight as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginBottom as usize}>(node_handle);
+        self.set_size_value_top_down::<{LayoutValue::MarginLeft as usize}>(node_handle);
     }
 
     /// Determines width and height if they are based on the parent, or fixed.
-    fn layout_element_top_down(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+    fn layout_element_top_down(&mut self, node_handle: tl::NodeHandle) {
         if let Some(style) = self.computed_styles.get(&node_handle) {
             // println!("layout_element_top_down: {:?} style {:?}", node_handle, style);
             let (display, _) = style.get_value::<css::Display>("display");
@@ -574,9 +587,9 @@ impl Window<'_, '_, '_, '_> {
                 },
                 Some(css::Display::Block) | Some(css::Display::InlineBlock) => {
                     let (width, width_unit) = style.get_value::<f32>("width");
-                    let px_width = self.calc_size_top_down::<{LayoutValue::Width as usize}>(width, width_unit, node_handle, parent_handle);
+                    let px_width = self.calc_size_top_down::<{LayoutValue::Width as usize}>(width, width_unit, node_handle);
                     let (height, height_unit) = style.get_value::<f32>("height");
-                    let px_height = self.calc_size_top_down::<{LayoutValue::Height as usize}>(height, height_unit, node_handle, parent_handle);
+                    let px_height = self.calc_size_top_down::<{LayoutValue::Height as usize}>(height, height_unit, node_handle);
                     if let Some(node_layout) = self.computed_layouts.get_mut(&node_handle) {
                         node_layout.set::<{LayoutValue::Width as usize}>(px_width);
                         node_layout.set::<{LayoutValue::Height as usize}>(px_height);
@@ -596,7 +609,7 @@ impl Window<'_, '_, '_, '_> {
     }
      
     /// Determines width and height if they are based on the content. 
-    fn layout_element_bottom_up(&mut self, node_handle: tl::NodeHandle, parent_handle: Option<tl::NodeHandle>) {
+    fn layout_element_bottom_up(&mut self, node_handle: tl::NodeHandle) {
         // TODO use paddings, margins, borders in content size calculation
         if let Some(node) = node_handle.get(self.vdom.parser()) {
             if let Some(style) = self.computed_styles.get(&node_handle) {
@@ -616,7 +629,7 @@ impl Window<'_, '_, '_, '_> {
                                         let mut parent_x = 0;
                                         let mut parent_y = 0;
                                         let mut parent_width: Option<i32> = None;
-                                        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                                        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()).map_or(None, |p| self.computed_layouts.get(&p)) {
                                             parent_x = parent_layout.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
                                             parent_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
                                             parent_width = parent_layout.get::<{LayoutValue::Width as usize}>();
@@ -634,7 +647,7 @@ impl Window<'_, '_, '_, '_> {
                                                     layout_mut.set::<{LayoutValue::Width as usize}>(Some(text_width));
                                                     layout_mut.set::<{LayoutValue::Height as usize}>(Some(text_height));
                                                 }
-                                                if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get_mut(&p)) {
+                                                if let Some(parent_layout_mut) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()).map_or(None, |p| self.computed_layouts.get_mut(&p)) {
                                                     // content x and y is negative because the last child is computed first. In the end the values are offset by contentWidth and contentHeight which should get to 0,0
                                                     parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(-new_content_x));
                                                     parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(parent_y - text_height));
@@ -693,7 +706,7 @@ impl Window<'_, '_, '_, '_> {
                                 layout_mut.set::<{LayoutValue::X as usize}>(Some(0));
                             }
                         } else {
-                            if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                            if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()).map_or(None, |p| self.computed_layouts.get(&p)) {
                                 content_x = parent_layout.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
                             }
                             if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
@@ -701,7 +714,7 @@ impl Window<'_, '_, '_, '_> {
                             }
                         }
                         let mut content_y = 0;
-                        if let Some(parent_layout) = parent_handle.map_or(None, |p| self.computed_layouts.get(&p)) {
+                        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()).map_or(None, |p| self.computed_layouts.get(&p)) {
                             content_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
                         }
                         if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
@@ -713,7 +726,7 @@ impl Window<'_, '_, '_, '_> {
                             own_width = layout.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
                             own_height = layout.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
                         }
-                        if let Some(parent_layout_mut) = parent_handle.map_or(None, |p| self.computed_layouts.get_mut(&p)) {
+                        if let Some(parent_layout_mut) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref()).map_or(None, |p| self.computed_layouts.get_mut(&p)) {
                             // content x and y is negative because the last child is computed first. In the end the values are offset by contentWidth and contentHeight which should get to 0,0
                             parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(content_x -own_width));
                             parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(content_y - own_height));
@@ -744,7 +757,7 @@ impl Window<'_, '_, '_, '_> {
     }
 
     /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
-    fn layout_mask_top_down(&mut self, _node_handle: tl::NodeHandle, _parent_handle: Option<tl::NodeHandle>) {
+    fn layout_mask_top_down(&mut self, _node_handle: tl::NodeHandle) {
         // TODO doesnt seem to work properly at all, redo all of this
         // let mut parent_content_width = 0;
         // let mut parent_content_height = 0;
