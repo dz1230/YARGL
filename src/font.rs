@@ -3,6 +3,8 @@ use sdl2::render::Canvas;
 
 use crate::layout;
 
+// TODO use rasterized chars instead of outlines
+
 struct TextCanvasBuilder<'a, Target: sdl2::render::RenderTarget> {
     canvas: &'a mut Canvas<Target>,
     x: f32,

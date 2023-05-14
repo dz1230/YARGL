@@ -55,7 +55,7 @@ impl Context<'_, '_> {
                 sdl2::event::Event::MouseButtonUp { timestamp, window_id, which: _, mouse_btn, clicks, x, y } => {
                     for window in windows {
                         if window.sdl_window().id() == window_id {
-                            window.pointer_up_events.trigger(&event::Event(event::PointerUpEvent { 
+                            return_code = window.pointer_up_events.trigger(&event::Event(event::PointerUpEvent { 
                                 data: event::PointerEventData {
                                     x,
                                     y,
@@ -77,7 +77,7 @@ impl Context<'_, '_> {
                 sdl2::event::Event::MouseMotion { timestamp, window_id, which: _, mousestate, x, y, xrel, yrel } => {
                     for window in windows {
                         if window.sdl_window().id() == window_id {
-                            window.pointer_move_events.trigger(&event::Event(event::PointerMoveEvent {
+                            return_code = window.pointer_move_events.trigger(&event::Event(event::PointerMoveEvent {
                                 x,
                                 y,
                                 x_rel: xrel,
@@ -98,7 +98,7 @@ impl Context<'_, '_> {
                 sdl2::event::Event::MouseWheel { timestamp, window_id, which: _, x, y, direction } => {
                     for window in windows {
                         if window.sdl_window().id() == window_id {
-                            window.scroll_events.trigger(&event::Event(event::ScrollEvent {
+                            return_code = window.scroll_events.trigger(&event::Event(event::ScrollEvent {
                                 x: if direction == sdl2::mouse::MouseWheelDirection::Normal {x} else {-x},
                                 y: if direction == sdl2::mouse::MouseWheelDirection::Normal {y} else {-y},
                                 timestamp,

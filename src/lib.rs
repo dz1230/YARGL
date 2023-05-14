@@ -32,19 +32,13 @@ mod tests {
         window.pointer_up_events.add_listener(|event, window| {
             let node = window.get_node_at(event.0.data.x, event.0.data.y);
             match node {
-                None => {
-                    println!("Clicked: None");
-                },
                 Some(tl::Node::Tag(_tag)) => {
                     let selector = css::Selector::complete_selector(node.unwrap());
                     if let Some(id) = selector.id {
-                        if id == "open_font" {
-                            println!("Clicked: Open Font");
+                        if id == "close_window" {
+                            return  EventReturnCode::Quit;
                         }
                     }
-                },
-                Some(tl::Node::Raw(node)) => {
-                    println!("Clicked: {:?}", node);
                 },
                 _ => {}
             }

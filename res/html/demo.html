@@ -8,7 +8,6 @@
             html, body {
                 width: 100%;
                 height: 100%;
-                text-align: center;
                 background-color: #090916;
             }
             h1 {
@@ -16,28 +15,16 @@
                 font-size: 24pt;
                 width: 100%;
             }
+            #close_window {
+                font-size: 12pt;
+                color: #ffffff;
+            }
             #title {
                 color: #ff0000;
             }
-            p {
-                font-size: 12pt;
-                margin: 1em;
-            }
-            .selected-font {
+            #title, #close_window {
+                text-align: center;
                 font-family: Arial;
-                color: #ffffff;
-            }
-            #font, #open_font, #alphabet {
-                font-size: 12pt;
-            }
-            #title {
-                background-color: #00ff00;
-            }
-            #font {
-                background-color: #0000ff;
-            }
-            #alphabet {
-                background-color: #ff00ff;
             }
             button {
                 border-top-left-radius: 0px;
@@ -55,9 +42,7 @@
         </style>
     </head>
     <body>
-        <h1 class="selected-font" id="title">YARGL</h1>
-        <p class="selected-font">Font: <span id="font"></span></p>
-        <button class="selected-font" id="open_font">Open...</button>
-        <div class="selected-font" id="alphabet"></div>
+        <h1 id="title">YARGL DEMO</h1>
+        <button id="close_window">Close Window</button>
     </body>
 </html>
