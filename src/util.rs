@@ -1,4 +1,21 @@
 
+pub fn pack_id_color(id: u32) -> sdl2::pixels::Color {
+    sdl2::pixels::Color::RGBA(
+        (id & 0xFF) as u8,
+        ((id >> 8) & 0xFF) as u8,
+        ((id >> 16) & 0xFF) as u8,
+        ((id >> 24) & 0xFF) as u8,
+    )
+}
+
+pub fn unpack_id_color(color: sdl2::pixels::Color) -> u32 {
+    (color.r as u32) | ((color.g as u32) << 8) | ((color.b as u32) << 16) | ((color.a as u32) << 24)
+}
+
+pub fn u32_from_bytes(bytes: &[u8]) -> u32 {
+    ((bytes[0] as u32) << 24) | ((bytes[1] as u32) << 16) | ((bytes[2] as u32) << 8) | (bytes[3] as u32)
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct DrawingError {
     pub msg: String

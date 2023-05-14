@@ -76,8 +76,9 @@ impl Window<'_, '_, '_, '_> {
         }
         match self.id_canvas.read_pixels(sdl2::rect::Rect::new(x, y, 1, 1), sdl2::pixels::PixelFormatEnum::RGBA8888)  {
             Ok(pixel) => {
-                let id = pixel[0] as u32 + ((pixel[1] as u32) >> 8) + ((pixel[2] as u32) >> 16) + ((pixel[3] as u32) >> 24);
-                return Some(tl::NodeHandle::new(id));
+                let id = util::u32_from_bytes(&pixel[0..4]);
+                let node_handle = tl::NodeHandle::new(id);
+                return Some(node_handle);
             },
             Err(_) => None
         }
@@ -324,7 +325,7 @@ impl Window<'_, '_, '_, '_> {
                 let inner_height = full_height - top_y_offset - bottom_y_offset;
 
                 let id: u32 = node_handle.get_inner();
-                let id_color = sdl2::pixels::Color::RGBA((id&0xFF) as u8, ((id&0x00FF) << 8) as u8, ((id&0x0000FF) << 16) as u8, ((id&0x000000FF) << 24) as u8);
+                let id_color = util::pack_id_color(id);
 
                 let (background_color_opt, _) = style.get_value::<css::CssColor>("background-color");
                 let background_color = background_color_opt.unwrap_or(css::CssColor {sdl_color: sdl2::pixels::Color::RGBA(0xFF, 0xFF, 0xFF, 0x0)});
@@ -619,20 +620,6 @@ impl Window<'_, '_, '_, '_> {
                         .map_or(None, |f| f.split(',').find_map(|font_name| self.ctx.fonts.get(font_name.to_lowercase().as_str()))) {
                         if let Some(parent_layout_mut) = self.computed_layouts.get_mut(&parent_handle) {
                             font.text_layout(bytes.as_utf8_str().trim().as_ref(), font_size, parent_layout_mut);
-                            // let x0 = layout_mut.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
-                            // let y0 = layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
-                            // let cur_content_width = layout_mut.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
-                            // let cur_content_height = layout_mut.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-                            // let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
-                            // let (content_width, content_height, x1, y1) = font.text_dimensions::<sdl2::video::Window>(
-                            //     bytes.as_utf8_str().trim().as_ref(),
-                            //     font_size,
-                            //     font_size,
-                            //     -x0, -y0, layout_mut.get::<{LayoutValue::Width as usize}>(), &breakable, None);
-                            // layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(-x1));
-                            // layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(-y1));
-                            // layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(content_width.max(cur_content_width)));
-                            // layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(cur_content_height + content_height));
                         }
                     }
                 }

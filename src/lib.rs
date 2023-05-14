@@ -12,13 +12,15 @@ pub mod layout;
 mod tests {
     use std::rc::Rc;
 
-    use crate::{context::Context, event::{EventReturnCode, EventReceiver}, window::{WindowCreationOptions, Window}, font::Font};
+    use crate::{context::Context, event::{EventReturnCode, EventReceiver}, window::{WindowCreationOptions, Window}, font::Font, css};
 
     //use super::*;
 
     #[test]
     fn it_works() {
         let mut raw_ctx = Context::new();
+        //let mut font_data: Vec<u8> = Vec::new();
+        //let mut html_data = std::fs::read("res/html/demo.html").unwrap();
         let font_data_arial = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").unwrap();
         let arial_font = Font::new(&font_data_arial, 0, 1);
         raw_ctx.fonts.insert("arial".to_string(), &arial_font);
@@ -33,8 +35,13 @@ mod tests {
                 None => {
                     println!("Clicked: None");
                 },
-                Some(tl::Node::Tag(node)) => {
-                    println!("Clicked: {:?}", node.name());
+                Some(tl::Node::Tag(_tag)) => {
+                    let selector = css::Selector::complete_selector(node.unwrap());
+                    if let Some(id) = selector.id {
+                        if id == "open_font" {
+                            println!("Clicked: Open Font");
+                        }
+                    }
                 },
                 Some(tl::Node::Raw(node)) => {
                     println!("Clicked: {:?}", node);

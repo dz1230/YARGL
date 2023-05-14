@@ -188,6 +188,8 @@ impl NodeLayoutInfo {
         self.values[V].is_some()
     }
 
+    // TODO write unit tests for layout
+
     // TODO somehow this ends up in correct layout, but reversed. figure out why (current fix is to flip it afterwards)
 
     /// Updates content flow for an inline child. Returns the child's position. Call in reverse order of children.
@@ -218,8 +220,6 @@ impl NodeLayoutInfo {
 
     /// Updates content flow for a block child. Returns the child's position. Call in reverse order of children.
     pub fn reverse_flow_block(&mut self, child_width: i32, child_height: i32) -> (i32, i32) {
-        println!("reverse_flow_block: child_width: {}, child_height: {}", child_width, child_height);
-
         self.reverse_break_line();
         let child_x = -self.values[LayoutValue::ContentX as usize].unwrap_or(0);
         let child_y = -self.values[LayoutValue::ContentY as usize].unwrap_or(0);
@@ -235,8 +235,6 @@ impl NodeLayoutInfo {
         let line_height = self.values[LayoutValue::ContentLineHeight as usize].unwrap_or(0);
         let content_width = self.values[LayoutValue::ContentWidth as usize].unwrap_or(0);
         let content_height = self.values[LayoutValue::ContentHeight as usize].unwrap_or(0);
-
-        println!("line_width: {}, line_height: {}, content_width: {}, content_height: {}", line_width, line_height, content_width, content_height);
 
         self.set::<{LayoutValue::ContentWidth as usize}>(Some(content_width.max(line_width)));
         self.set::<{LayoutValue::ContentHeight as usize}>(Some(content_height + line_height));
