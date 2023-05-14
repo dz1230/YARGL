@@ -19,9 +19,7 @@ mod tests {
     #[test]
     fn it_works() {
         let mut raw_ctx = super::context::init().unwrap();
-        //let mut font_data: Vec<u8> = Vec::new();
-        //let mut html_data = std::fs::read("res/html/demo.html").unwrap();
-        let font_data_arial = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").unwrap();
+        let font_data_arial = std::fs::read("res/font/arial.ttf").unwrap();
         let arial_font = Font::new(&font_data_arial, 0, 1);
         raw_ctx.fonts.insert("arial".to_string(), &arial_font);
         let ctx = Rc::new(raw_ctx);
