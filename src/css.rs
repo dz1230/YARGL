@@ -436,7 +436,7 @@ impl Style {
     /// use yargl::css::{Style, Unit, parse_css, CssColor};
     /// use std::vec::Vec;
     /// use std::collections::HashMap;
-    /// let mut styles = parse_css("div { width: 100px; font-size: 20px; height: 100%; color: #ff0000; }");
+    /// let mut styles = parse_css("div { width: 100px; font-size: 20px; height: 100%; color: #ff0000; }").unwrap();
     /// let mut style = styles.remove(0);
     /// let (width, unit) = style.get_value::<f32>("width");
     /// assert!(width.is_some());
@@ -539,12 +539,13 @@ impl ComputedStyle {
     /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; } div.a#d { width: 200px; }").unwrap();
     /// let mut style1 = styles.remove(0);
     /// let mut style2 = styles.remove(0);
-    /// let mut computed_style = ComputedStyle::new(Selector { tag_name: Some("div".to_string()), class_list: vec!["a".to_string()], id: Some("d".to_string()) });
-    /// computed_style.apply_style(style1, None);
+    /// let selector = Selector { tag_name: Some("div".to_string()), class_list: vec!["a".to_string()], id: Some("d".to_string()) };
+    /// let mut computed_style = ComputedStyle::new(selector);
+    /// computed_style.apply_style(style1.clone(), &style1.selectors.get(0).unwrap().specificity());
     /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(100.0), Some(Unit::Px)));
     /// assert_eq!(computed_style.get_value::<f32>("font-size"), (Some(20.0), Some(Unit::Px)));
     /// assert_eq!(computed_style.get_value::<f32>("height"), (Some(100.0), Some(Unit::Percent)));
-    /// computed_style.apply_style(style2, None);
+    /// computed_style.apply_style(style2.clone(), &style2.selectors.get(0).unwrap().specificity());
     /// assert_eq!(computed_style.get_value::<f32>("width"), (Some(200.0), Some(Unit::Px)));
     /// ```
     pub fn apply_style(&mut self, style: Rc<Style>, specificity: &Specificity) {
