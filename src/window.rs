@@ -269,15 +269,6 @@ impl Window<'_, '_, '_, '_> {
         // (Scrollbars appear above the content to avoid layout issues. This behaviour is different to most browsers.)
         for (node_handle, _) in all_handles.iter() {
             self.layout_mask_top_down(*node_handle);
-            if let Some(layout) = self.computed_layouts.get(node_handle) {
-                if let Some(style) = self.computed_styles.get(node_handle) {
-                    if let Some(node) = node_handle.get(self.vdom.parser()) {
-                        if let Some(tag) = node.as_tag() {
-                            println!("{:?}\n {:?}\n {:?}", tag.name(), layout, style.to_string());
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -447,12 +438,10 @@ impl Window<'_, '_, '_, '_> {
                     if font_family_opt.is_some() && font_color_opt.is_some() {
                         let font_family = font_family_opt.unwrap();
                         let font_color = font_color_opt.unwrap();
-                        //println!("Font: {:?} {:?}", font_family, font_color);
                         self.sdl_canvas.set_draw_color(font_color.sdl_color);
                         for font_name in font_family.split(',') {
                             let font_name = font_name.trim();
                             if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
-                                //println!("Found font: {:?}", font_name);
                                 let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
                                 font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
                                 break;
