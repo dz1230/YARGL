@@ -12,13 +12,13 @@ pub mod layout;
 mod tests {
     use std::rc::Rc;
 
-    use crate::{context::Context, event::{EventReturnCode, EventReceiver}, window::{WindowCreationOptions, Window}, font::Font, css};
+    use crate::{event::{EventReturnCode, EventReceiver}, window::{WindowCreationOptions, Window}, font::Font, css};
 
     //use super::*;
 
     #[test]
     fn it_works() {
-        let mut raw_ctx = Context::new();
+        let mut raw_ctx = super::context::init().unwrap();
         //let mut font_data: Vec<u8> = Vec::new();
         //let mut html_data = std::fs::read("res/html/demo.html").unwrap();
         let font_data_arial = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").unwrap();
