@@ -617,85 +617,27 @@ impl Window<'_, '_, '_, '_> {
                     if let Some(font) = self.computed_styles.get(&parent_handle)
                         .map_or(None, |s| s.get_value::<String>("font-family").0)
                         .map_or(None, |f| f.split(',').find_map(|font_name| self.ctx.fonts.get(font_name.to_lowercase().as_str()))) {
-                        if let Some(layout_mut) = self.computed_layouts.get_mut(&parent_handle) {
-                            let x0 = layout_mut.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
-                            let y0 = layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
-                            let cur_content_width = layout_mut.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
-                            let cur_content_height = layout_mut.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-                            let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
-                            let (content_width, content_height, x1, y1) = font.text_dimensions::<sdl2::video::Window>(
-                                bytes.as_utf8_str().trim().as_ref(),
-                                font_size,
-                                font_size,
-                                -x0, -y0, layout_mut.get::<{LayoutValue::Width as usize}>(), &breakable, None);
-                            layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(-x1));
-                            layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(-y1));
-                            layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(content_width.max(cur_content_width)));
-                            layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(cur_content_height + content_height));
+                        if let Some(parent_layout_mut) = self.computed_layouts.get_mut(&parent_handle) {
+                            font.text_layout(bytes.as_utf8_str().trim().as_ref(), font_size, parent_layout_mut);
+                            // let x0 = layout_mut.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
+                            // let y0 = layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
+                            // let cur_content_width = layout_mut.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
+                            // let cur_content_height = layout_mut.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
+                            // let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
+                            // let (content_width, content_height, x1, y1) = font.text_dimensions::<sdl2::video::Window>(
+                            //     bytes.as_utf8_str().trim().as_ref(),
+                            //     font_size,
+                            //     font_size,
+                            //     -x0, -y0, layout_mut.get::<{LayoutValue::Width as usize}>(), &breakable, None);
+                            // layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(-x1));
+                            // layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(-y1));
+                            // layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(content_width.max(cur_content_width)));
+                            // layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(cur_content_height + content_height));
                         }
                     }
                 }
             },
             _ => {}
-        }
-    }
-
-    /// Determines relative x and y for inline elements. Relies on width and height being calculated. Updates parent content x and y and content width and height.
-    fn layout_flow_inline_element(&mut self, node_handle: &tl::NodeHandle) {
-        // get x and y from parent content x and y (similar to text_content calculation)
-        let mut parent_content_x = 0;
-        let mut parent_content_y = 0;
-        let mut parent_content_width = 0;
-        //let mut parent_content_height = 0;
-        let mut own_width = 0;
-        //let mut own_height = 0;
-        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
-            .map_or(None, |p| self.computed_layouts.get(p)) {
-            parent_content_x = parent_layout.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
-            parent_content_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
-            //parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-            parent_content_width = parent_layout.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
-        }
-        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-            layout_mut.set::<{LayoutValue::X as usize}>(Some(-parent_content_x));
-            layout_mut.set::<{LayoutValue::Y as usize}>(Some(-parent_content_y));
-            own_width = layout_mut.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
-            //own_height = layout_mut.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
-        }
-        if let Some(parent_layout_mut) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
-            .map_or(None, |p| self.computed_layouts.get_mut(p)) {
-            parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(parent_content_x - own_width));
-            parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(parent_content_width + own_width));
-            // TODO check for overflow if parent has width.
-            //parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(parent_content_height.max(own_height)));
-        }
-    }
-    /// Determines relative x and y for block elements. Relies on width and height being calculated. Updates parent content x and y and content width and height.
-    fn layout_flow_block_element(&mut self, node_handle: &tl::NodeHandle) {
-        // get y from parent, x is 0, update parent content x and y and content width and height
-        let mut parent_content_y = 0;
-        let mut parent_content_width = 0;
-        let mut parent_content_height = 0;
-        let mut own_height = 0;
-        let mut own_width = 0;
-        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
-            .map_or(None, |p| self.computed_layouts.get(p)) {
-            parent_content_y = parent_layout.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
-            parent_content_width = parent_layout.get::<{LayoutValue::ContentWidth as usize}>().unwrap_or(0);
-            parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-        }
-        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-            layout_mut.set::<{LayoutValue::X as usize}>(Some(0));
-            layout_mut.set::<{LayoutValue::Y as usize}>(Some(parent_content_height));
-            own_height = layout_mut.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
-            own_width = layout_mut.get::<{LayoutValue::Width as usize}>().unwrap_or(0);
-        }
-        if let Some(parent_layout_mut) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
-            .map_or(None, |p| self.computed_layouts.get_mut(p)) {
-            parent_layout_mut.set::<{LayoutValue::ContentX as usize}>(Some(0));
-            parent_layout_mut.set::<{LayoutValue::ContentY as usize}>(Some(parent_content_y - own_height));
-            parent_layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(parent_content_width.max(own_width)));
-            parent_layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(parent_content_height + own_height));
         }
     }
 
@@ -708,36 +650,36 @@ impl Window<'_, '_, '_, '_> {
             Some(tl::Node::Tag(_tag)) => {
                 // Finalize content width and height (previously calculated by children)
                 if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-                    // content only updates contentX unless there is a line break, so if contentWidth was not set 
-                    // it means there's only one line and contentWidth is contentX
-                    if layout_mut.get::<{LayoutValue::ContentWidth as usize}>().is_none() {
-                        let content_x = layout_mut.get::<{LayoutValue::ContentX as usize}>().unwrap_or(0);
-                        layout_mut.set::<{LayoutValue::ContentWidth as usize}>(Some(-content_x));
-                    }
-                    // content only updates contentY unless there is a line break, so if contentHeight was not set
-                    // it means there's only one line and contentHeight is contentY
-                    if layout_mut.get::<{LayoutValue::ContentHeight as usize}>().is_none() {
-                        let content_y = layout_mut.get::<{LayoutValue::ContentY as usize}>().unwrap_or(0);
-                        layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(-content_y));
-                    }
-                    // contentHeight / contentY is always one line short while the content is being laid out, so we add one line
-                    // to the contentHeight // TODO check if node is empty
-                    let line_height = layout_mut.get::<{LayoutValue::FontSize as usize}>().unwrap_or(0);
-                    let content_height = layout_mut.get::<{LayoutValue::ContentHeight as usize}>().unwrap_or(0);
-                    layout_mut.set::<{LayoutValue::ContentHeight as usize}>(Some(content_height + line_height));
+                    layout_mut.reverse_break_line();
                 }
                 // Finalize own width and height (either previously calculated top-down, or now copied from content width and height)
                 self.layout_content_based_width_and_height(node_handle);
                 // Finalize relative x and y (document flow)
                 let (display, _) = self.computed_styles.get(&node_handle).map_or((None, None), |s| s.get_value::<css::Display>("display"));
-                match display {
-                    Some(css::Display::Inline) | Some(css::Display::InlineBlock) => {
-                        self.layout_flow_inline_element(&node_handle);
-                    },
-                    Some(css::Display::Block) => {
-                        self.layout_flow_block_element(&node_handle);
-                    },
-                    _ => {}
+                let mut own_width = None;
+                let mut own_height = None;
+                if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                    own_width = layout_mut.get::<{LayoutValue::Width as usize}>();
+                    own_height = layout_mut.get::<{LayoutValue::Height as usize}>();
+                }
+                let mut x = 0;
+                let mut y = 0;
+                if let Some(parent_layout_mut) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
+                    .map_or(None, |p| self.computed_layouts.get_mut(p)) {
+                    match display {
+                        Some(css::Display::Inline) | Some(css::Display::InlineBlock) => {
+                            (x, y) = parent_layout_mut.reverse_flow_inline(own_width.unwrap_or(0), own_height.unwrap_or(0));
+                        },
+                        Some(css::Display::Block) => {
+                            (x, y) = parent_layout_mut.reverse_flow_block(own_width.unwrap_or(0), own_height.unwrap_or(0));
+                        },
+                        // TODO implement other display types
+                        _ => {}
+                    }
+                }
+                if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+                    layout_mut.set::<{LayoutValue::X as usize}>(Some(x));
+                    layout_mut.set::<{LayoutValue::Y as usize}>(Some(y));
                 }
             },
             _ => {}
@@ -746,68 +688,39 @@ impl Window<'_, '_, '_, '_> {
 
     /// Calculates MaskedX, MaskedY, MaskedWidth and MaskedHeight for the given node. Converts X, Y from relative to absolute.
     fn layout_mask_top_down(&mut self, node_handle: tl::NodeHandle) {
+        // Because the layout process is broken, we need to flip the Y axis (//TODO: remove this once the layout is fixed,
+        //----FROM HERE-----
+        // need: parent content_height, own y, own_height
+        let mut parent_content_height = None;
+        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
+            .map_or(None, |p| self.computed_layouts.get(p)) {
+            parent_content_height = parent_layout.get::<{LayoutValue::ContentHeight as usize}>();
+        }
+        if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
+            let own_y = layout_mut.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+            let own_height = layout_mut.get::<{LayoutValue::Height as usize}>().unwrap_or(0);
+            match parent_content_height {
+                Some(parent_content_height) => {
+                    layout_mut.set::<{LayoutValue::Y as usize}>(Some(parent_content_height - own_y - own_height));
+                },
+                None => {}
+            }
+        }
+        //----TO HERE-----
+
+        // Now convert from relative to absolute (X and Y)
         let mut parent_x = 0;
         let mut parent_y = 0;
-        if let Some(parent_layout) = self.computed_parents.get(&node_handle)
-            .map_or(None, |v| v.as_ref())
-            .map_or(None, |p| self.computed_layouts.get(&p)) {
+        if let Some(parent_layout) = self.computed_parents.get(&node_handle).map_or(None, |v| v.as_ref())
+            .map_or(None, |p| self.computed_layouts.get(p)) {
             parent_x = parent_layout.get::<{LayoutValue::X as usize}>().unwrap_or(0);
             parent_y = parent_layout.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
         }
         if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-            let x = layout_mut.get::<{LayoutValue::X as usize}>().unwrap_or(0);
-            let y = layout_mut.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
-
-            layout_mut.set::<{LayoutValue::X as usize}>(Some(parent_x + x));
-            layout_mut.set::<{LayoutValue::Y as usize}>(Some(parent_y + y));
+            let own_x = layout_mut.get::<{LayoutValue::X as usize}>().unwrap_or(0);
+            let own_y = layout_mut.get::<{LayoutValue::Y as usize}>().unwrap_or(0);
+            layout_mut.set::<{LayoutValue::X as usize}>(Some(parent_x + own_x));
+            layout_mut.set::<{LayoutValue::Y as usize}>(Some(parent_y + own_y));
         }
-        
-        // TODO doesnt seem to work properly at all, redo all of this
-        // if let Some(layout_mut) = self.computed_layouts.get_mut(&node_handle) {
-        //     // // horizontal mask
-        //     // if own_x < parent_x && own_x + own_width > parent_x + parent_width {
-        //     //     // left and right overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_width));
-        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-        //     // } else if own_x < parent_x && own_x + own_width > parent_x {
-        //     //     // left overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_x + own_width - parent_x));
-        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(parent_x));
-        //     // } else if own_x >= parent_x && own_x + own_width > parent_x + parent_width {
-        //     //     // right overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(parent_x + parent_width - own_x));
-        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-        //     // } else if own_x >= parent_x && own_x + own_width <= parent_x + parent_width {
-        //     //     // element inside parent (horizontally)
-        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(own_width));
-        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(own_x));
-        //     // } else {
-        //     //     // element outside parent (horizontally)
-        //     //     layout_mut.set::<{LayoutValue::MaskedWidth as usize}>(Some(0));
-        //     //     layout_mut.set::<{LayoutValue::MaskedX as usize}>(Some(0));
-        //     // }
-        //     // // vertical mask
-        //     // if own_y < parent_y && own_y + own_height > parent_y + parent_height {
-        //     //     // top and bottom overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_height));
-        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-        //     // } else if own_y < parent_y && own_y + own_height > parent_y {
-        //     //     // top overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_y + own_height - parent_y));
-        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(parent_y));
-        //     // } else if own_y >= parent_y && own_y + own_height > parent_y + parent_height {
-        //     //     // bottom overflow
-        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(parent_y + parent_height - own_y));
-        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-        //     // } else if own_y >= parent_y && own_y + own_height <= parent_y + parent_height {
-        //     //     // element inside parent (vertically)
-        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(own_height));
-        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(own_y));
-        //     // } else {
-        //     //     // element outside parent (vertically)
-        //     //     layout_mut.set::<{LayoutValue::MaskedHeight as usize}>(Some(0));
-        //     //     layout_mut.set::<{LayoutValue::MaskedY as usize}>(Some(0));
-        //     // }
-        // }
     }
 }

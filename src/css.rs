@@ -78,6 +78,36 @@ impl FromStr for Unit {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum TextAlign {
+    Left,
+    Right,
+    Center,
+}
+
+impl ToString for TextAlign {
+    fn to_string(&self) -> String {
+        match self {
+            TextAlign::Left => "left".to_string(),
+            TextAlign::Right => "right".to_string(),
+            TextAlign::Center => "center".to_string(),
+        }
+    }
+}
+
+impl FromStr for TextAlign {
+    type Err = CssParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "left" => Ok(TextAlign::Left),
+            "right" => Ok(TextAlign::Right),
+            "center" => Ok(TextAlign::Center),
+            _ => Err(CssParseError { css: s.to_string(), message: "invalid or unsupported enum value".to_string() }),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum BoxSizing {
     ContentBox,
     BorderBox,

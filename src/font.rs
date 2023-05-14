@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use sdl2::render::Canvas;
 
+use crate::layout;
+
 struct TextCanvasBuilder<'a, Target: sdl2::render::RenderTarget> {
     canvas: &'a mut Canvas<Target>,
     x: f32,
@@ -104,6 +106,20 @@ impl<'a> Font<'a> {
 
     pub fn face(&self) -> Option<&ttf_parser::Face<'a>> {
         self.faces.get(&self.used_index)
+    }
+
+    /// Updates content flow of the given parent layout with the dimensions of the given text. Can break lines at any character.
+    pub fn text_layout(&self, text: &str, line_height: i32, parent_layout_mut: &mut layout::NodeLayoutInfo) {
+        if let Some(face) = self.face() {
+            let units_per_em = face.units_per_em() as f32;
+            for c in text.chars() {
+                if let Some(glyph) = face.glyph_index(c) {
+                    let hor_advance_f = face.glyph_hor_advance(glyph).unwrap_or(0) as f32;
+                    let hor_advance = (hor_advance_f / units_per_em * (line_height as f32)) as i32;
+                    parent_layout_mut.reverse_flow_inline(hor_advance, line_height);
+                }
+            }
+        }
     }
 
     // TODO fill shapes (currently only draws outlines)

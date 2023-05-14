@@ -24,6 +24,8 @@ pub enum LayoutValue {
     ContentY,
     ContentWidth,
     ContentHeight,
+    ContentLineWidth,
+    ContentLineHeight,
     MaskedX,
     MaskedY,
     MaskedWidth,
@@ -59,15 +61,17 @@ impl Into<usize> for LayoutValue {
             LayoutValue::ContentY => 18,
             LayoutValue::ContentWidth => 19,
             LayoutValue::ContentHeight => 20,
-            LayoutValue::MaskedX => 21,
-            LayoutValue::MaskedY => 22,
-            LayoutValue::MaskedWidth => 23,
-            LayoutValue::MaskedHeight => 24,
-            LayoutValue::BorderTopLeftRadius => 25,
-            LayoutValue::BorderTopRightRadius => 26,
-            LayoutValue::BorderBottomLeftRadius => 27,
-            LayoutValue::BorderBottomRightRadius => 28,
-            LayoutValue::MaxValue => 29,
+            LayoutValue::ContentLineWidth => 21,
+            LayoutValue::ContentLineHeight => 22,
+            LayoutValue::MaskedX => 23,
+            LayoutValue::MaskedY => 24,
+            LayoutValue::MaskedWidth => 25,
+            LayoutValue::MaskedHeight => 26,
+            LayoutValue::BorderTopLeftRadius => 27,
+            LayoutValue::BorderTopRightRadius => 28,
+            LayoutValue::BorderBottomLeftRadius => 29,
+            LayoutValue::BorderBottomRightRadius => 30,
+            LayoutValue::MaxValue => 31
         }
     }
 }
@@ -96,15 +100,17 @@ impl From<usize> for LayoutValue {
             18 => LayoutValue::ContentY,
             19 => LayoutValue::ContentWidth,
             20 => LayoutValue::ContentHeight,
-            21 => LayoutValue::MaskedX,
-            22 => LayoutValue::MaskedY,
-            23 => LayoutValue::MaskedWidth,
-            24 => LayoutValue::MaskedHeight,
-            25 => LayoutValue::BorderTopLeftRadius,
-            26 => LayoutValue::BorderTopRightRadius,
-            27 => LayoutValue::BorderBottomLeftRadius,
-            28 => LayoutValue::BorderBottomRightRadius,
-            29 => LayoutValue::MaxValue,
+            21 => LayoutValue::ContentLineWidth,
+            22 => LayoutValue::ContentLineHeight,
+            23 => LayoutValue::MaskedX,
+            24 => LayoutValue::MaskedY,
+            25 => LayoutValue::MaskedWidth,
+            26 => LayoutValue::MaskedHeight,
+            27 => LayoutValue::BorderTopLeftRadius,
+            28 => LayoutValue::BorderTopRightRadius,
+            29 => LayoutValue::BorderBottomLeftRadius,
+            30 => LayoutValue::BorderBottomRightRadius,
+            31 => LayoutValue::MaxValue,
             _ => panic!("Invalid layout value"),
         }
     }
@@ -176,6 +182,69 @@ impl NodeLayoutInfo {
         NodeLayoutInfo {
             values: vec![None; LayoutValue::MaxValue as usize],
         }
+    }
+
+    pub fn is_set<const V: usize>(&self) -> bool {
+        self.values[V].is_some()
+    }
+
+    // TODO somehow this ends up in correct layout, but reversed. figure out why (current fix is to flip it afterwards)
+
+    /// Updates content flow for an inline child. Returns the child's position. Call in reverse order of children.
+    pub fn reverse_flow_inline(&mut self, child_width: i32, child_height: i32) -> (i32, i32) {
+        let mut cur_content_x = -self.values[LayoutValue::ContentX as usize].unwrap_or(0);
+        let mut child_x = cur_content_x;
+        let mut child_y = -self.values[LayoutValue::ContentY as usize].unwrap_or(0);
+        
+        // possibly break child onto new line
+        if let Some(width) = self.values[LayoutValue::Width as usize] {
+            if cur_content_x + child_width > width {
+                self.reverse_break_line();
+                cur_content_x = -self.values[LayoutValue::ContentX as usize].unwrap_or(0);
+                child_x = cur_content_x;
+                child_y = -self.values[LayoutValue::ContentY as usize].unwrap_or(0);
+            }
+        }
+        
+        let cur_content_line_width = self.values[LayoutValue::ContentLineWidth as usize].unwrap_or(0);
+        let cur_content_line_height = self.values[LayoutValue::ContentLineHeight as usize].unwrap_or(0);
+
+        self.set::<{LayoutValue::ContentX as usize}>(Some(cur_content_x - child_width));
+        self.set::<{LayoutValue::ContentLineWidth as usize}>(Some(cur_content_line_width + child_width));
+        self.set::<{LayoutValue::ContentLineHeight as usize}>(Some(cur_content_line_height.max(child_height)));
+
+        (child_x, child_y)
+    }
+
+    /// Updates content flow for a block child. Returns the child's position. Call in reverse order of children.
+    pub fn reverse_flow_block(&mut self, child_width: i32, child_height: i32) -> (i32, i32) {
+        println!("reverse_flow_block: child_width: {}, child_height: {}", child_width, child_height);
+
+        self.reverse_break_line();
+        let child_x = -self.values[LayoutValue::ContentX as usize].unwrap_or(0);
+        let child_y = -self.values[LayoutValue::ContentY as usize].unwrap_or(0);
+        self.set::<{LayoutValue::ContentLineWidth as usize}>(Some(child_width));
+        self.set::<{LayoutValue::ContentLineHeight as usize}>(Some(child_height));
+        self.reverse_break_line();
+        return (child_x, child_y);
+    }
+    
+    // Breaks the line, updates content width and content height based on line width and line height, updates content y, resets content x, line width and line height
+    pub fn reverse_break_line(&mut self) {
+        let line_width = self.values[LayoutValue::ContentLineWidth as usize].unwrap_or(0);
+        let line_height = self.values[LayoutValue::ContentLineHeight as usize].unwrap_or(0);
+        let content_width = self.values[LayoutValue::ContentWidth as usize].unwrap_or(0);
+        let content_height = self.values[LayoutValue::ContentHeight as usize].unwrap_or(0);
+
+        println!("line_width: {}, line_height: {}, content_width: {}, content_height: {}", line_width, line_height, content_width, content_height);
+
+        self.set::<{LayoutValue::ContentWidth as usize}>(Some(content_width.max(line_width)));
+        self.set::<{LayoutValue::ContentHeight as usize}>(Some(content_height + line_height));
+
+        self.set::<{LayoutValue::ContentY as usize}>(Some(-content_height - line_height));
+        self.set::<{LayoutValue::ContentX as usize}>(Some(0));
+        self.set::<{LayoutValue::ContentLineWidth as usize}>(Some(0));
+        self.set::<{LayoutValue::ContentLineHeight as usize}>(Some(0));
     }
 
     pub fn is_complete(&self) -> bool {
