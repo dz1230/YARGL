@@ -4,10 +4,16 @@ use tl::VDom;
 
 use crate::{context::Context, css, layout::{NodeLayoutInfo, LayoutValue}, event, util::{self, DrawingError}};
 
+#[derive(Debug, Clone)]
 pub struct WindowCreationOptions {
     pub title: String,
     pub width: u32,
     pub height: u32,
+}
+
+#[derive(Debug)]
+pub struct WindowCreationError {
+    pub message: String,
 }
 
 pub struct Window<'a, 'f, 'ff, 's> {
@@ -30,23 +36,28 @@ pub struct Window<'a, 'f, 'ff, 's> {
 
 impl Window<'_, '_, '_, '_> {
     /// Creates a new window and parses the given html.
-    pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Window<'a, 'f, 'ff, 's> {
+    pub fn new<'a, 'f, 'ff, 's>(ctx: Rc<Context<'f, 'ff>>, options: &WindowCreationOptions, html: &'a str, html_filename: Option<&str>) -> Result<Window<'a, 'f, 'ff, 's>, WindowCreationError> {
         let sdl_window = ctx.video_subsystem.window(&options.title, options.width, options.height)
             .position_centered()
             //.resizable()
             .build()
-            .unwrap();
+            .map_err(|e| WindowCreationError { message: format!("Failed to create window: {}", e) })?;
         let canvas = sdl_window
         .into_canvas()
         .present_vsync()
-        .build().unwrap();
+        .build().map_err(|e| WindowCreationError { message: format!("Failed to create canvas: {}", e) })?;
+        let vdom = tl::parse(html, tl::ParserOptions::default()).map_err(|e| WindowCreationError { message: format!("Failed to parse html: {}", e) })?;
+        let surface = sdl2::surface::Surface::new(options.width, options.height, sdl2::pixels::PixelFormatEnum::RGBA8888)
+            .map_err(|e| WindowCreationError { message: format!("Failed to create id surface: {}", e) })?;
+        let id_canvas = sdl2::render::SurfaceCanvas::from_surface(surface).
+            map_err(|e| WindowCreationError { message: format!("Failed to create id canvas: {}", e) })?;
         let mut w = Window {
             ctx: ctx.clone(),
             sdl_canvas: canvas,
-            id_canvas: sdl2::render::SurfaceCanvas::from_surface(sdl2::surface::Surface::new(options.width, options.height, sdl2::pixels::PixelFormatEnum::RGBA8888).unwrap()).unwrap(),
+            id_canvas,
             width: options.width,
             height: options.height,
-            vdom: tl::parse(html, tl::ParserOptions::default()).unwrap(),
+            vdom,
             html_file: html_filename.unwrap_or("").to_string(),
             computed_parents: HashMap::new(),
             computed_styles: HashMap::new(),
@@ -59,7 +70,7 @@ impl Window<'_, '_, '_, '_> {
         w.compute_parents();
         w.compute_styles();
         w.compute_layout();
-        w
+        Ok(w)
     }
 
     /// Retrieves the top node at the given cursor position. None if the position is outside the canvas.
@@ -152,11 +163,12 @@ impl Window<'_, '_, '_, '_> {
         match self.vdom.query_selector("style") {
             Some(style_nodes) => {
                 for node_handle in style_nodes {
-                    let style_node = node_handle.get(self.vdom.parser()).unwrap();
-                    let style_text = style_node.inner_text(self.vdom.parser()).to_string();
-                    match css::parse_css(style_text.as_str()) {
-                        Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
-                        Err(_err) => {}
+                    if let Some(style_node) = node_handle.get(self.vdom.parser()) {
+                        let style_text = style_node.inner_text(self.vdom.parser()).to_string();
+                        match css::parse_css(style_text.as_str()) {
+                            Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
+                            Err(_err) => {}
+                        }
                     }
                 }
             },
@@ -166,37 +178,40 @@ impl Window<'_, '_, '_, '_> {
         match self.vdom.query_selector("link[rel=\"stylesheet\"]") {
             Some(link_nodes) => {
                 for node_handle in link_nodes {
-                    let link_node = node_handle.get(self.vdom.parser()).unwrap();
-                    let href_opt = match link_node.as_tag() {
-                        Some(link_tag) => link_tag.attributes().get("href"),
-                        None => continue
-                    };
-                    let path_opt = match href_opt {
-                        Some(href_value_opt) => match href_value_opt {
-                            Some(href) => href.try_as_utf8_str(),
+                    if let Some(link_node) = node_handle.get(self.vdom.parser()) {
+                        // get and resolve href path
+                        let href_opt = match link_node.as_tag() {
+                            Some(link_tag) => link_tag.attributes().get("href"),
                             None => continue
-                        },
-                        None => continue
-                    };
-                    if path_opt.is_none() {
-                        continue;
-                    }
-                    let mut path: std::path::PathBuf;
-                    let mut path_str = path_opt.unwrap();
-                    if path_str.starts_with(".") {
-                        path = std::path::PathBuf::from(self.html_file.as_str());
-                        path.pop();
-                        path.push(path_str);
-                    } else {
-                        path = std::path::PathBuf::from(path_str);
-                    }
-                    path_str = path.to_str().unwrap();
-                    match std::fs::read_to_string(path_str) {
-                        Ok(css_text) => match css::parse_css(css_text.as_str()) {
-                            Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
+                        };
+                        let path_opt = match href_opt {
+                            Some(href_value_opt) => match href_value_opt {
+                                Some(href) => href.try_as_utf8_str(),
+                                None => continue
+                            },
+                            None => continue
+                        };
+                        if path_opt.is_none() {
+                            continue;
+                        }
+                        let mut path: std::path::PathBuf;
+                        let mut path_str = path_opt.unwrap();
+                        if path_str.starts_with(".") {
+                            path = std::path::PathBuf::from(self.html_file.as_str());
+                            path.pop();
+                            path.push(path_str);
+                        } else {
+                            path = std::path::PathBuf::from(path_str);
+                        }
+                        path_str = path.to_str().unwrap();
+                        // parse css
+                        match std::fs::read_to_string(path_str) {
+                            Ok(css_text) => match css::parse_css(css_text.as_str()) {
+                                Ok(mut parsed_styles) => styles.append(&mut parsed_styles),
+                                Err(_) => continue
+                            },
                             Err(_) => continue
-                        },
-                        Err(_) => continue
+                        }
                     }
                 }
             },
@@ -443,7 +458,7 @@ impl Window<'_, '_, '_, '_> {
                             let font_name = font_name.trim();
                             if let Some(font) = self.ctx.fonts.get(font_name.to_lowercase().as_str()) {
                                 let breakable = HashSet::from_iter(vec![' ', '\n', '\t', '\r', '\u{00A0}'].into_iter());
-                                font.text_dimensions(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
+                                font.render_text(text.as_str(), font_size, font_size, x, y, Some(width), &breakable, Some(&mut self.sdl_canvas));
                                 break;
                             }
                         }

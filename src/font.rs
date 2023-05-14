@@ -36,7 +36,10 @@ impl<Target : sdl2::render::RenderTarget> ttf_parser::OutlineBuilder for TextCan
     fn line_to(&mut self, x: f32, y: f32) {
         let scaled_x = x * self.scale;
         let scaled_y = y * self.scale;
-        self.canvas.draw_line(((self.x0 + self.x) as i32, (self.y0 - self.y) as i32), ((self.x0 + scaled_x) as i32, (self.y0 - scaled_y) as i32)).unwrap();
+        match self.canvas.draw_line(
+            ((self.x0 + self.x) as i32, (self.y0 - self.y) as i32), 
+            ((self.x0 + scaled_x) as i32, (self.y0 - scaled_y) as i32)
+        ) {_ => {}}
         self.x = scaled_x;
         self.y = scaled_y;
     }
@@ -54,7 +57,7 @@ impl<Target : sdl2::render::RenderTarget> ttf_parser::OutlineBuilder for TextCan
             let t = i as f32 / max_span as f32;
             let t_x = (1.0 - t) * (1.0 - t) * self.x + 2.0 * (1.0 - t) * t * scaled_x1 + t * t * scaled_x;
             let t_y = (1.0 - t) * (1.0 - t) * self.y + 2.0 * (1.0 - t) * t * scaled_y1 + t * t * scaled_y;
-            self.canvas.draw_point(((self.x0 + t_x) as i32, (self.y0 - t_y) as i32)).unwrap();
+            match self.canvas.draw_point(((self.x0 + t_x) as i32, (self.y0 - t_y) as i32)) {_ => {}}
         }
         self.x = scaled_x;
         self.y = scaled_y;
@@ -75,7 +78,7 @@ impl<Target : sdl2::render::RenderTarget> ttf_parser::OutlineBuilder for TextCan
             let t = i as f32 / max_span as f32;
             let t_x = (1.0 - t) * (1.0 - t) * (1.0 - t) * self.x + 3.0 * (1.0 - t) * (1.0 - t) * t * scaled_x1 + 3.0 * (1.0 - t) * t * t * scaled_x2 + t * t * t * scaled_x;
             let t_y = (1.0 - t) * (1.0 - t) * (1.0 - t) * self.y + 3.0 * (1.0 - t) * (1.0 - t) * t * scaled_y1 + 3.0 * (1.0 - t) * t * t * scaled_y2 + t * t * t * scaled_y;
-            self.canvas.draw_point(((self.x0 + t_x) as i32, (self.y0 - t_y) as i32)).unwrap();
+            match self.canvas.draw_point(((self.x0 + t_x) as i32, (self.y0 - t_y) as i32)) {_ => {}}
         }
         self.x = scaled_x;
         self.y = scaled_y;
@@ -136,7 +139,7 @@ impl<'a> Font<'a> {
     /// - draw_on [Option<&mut sdl2::render::Canvas<Target>>] - If given, draws the text on the canvas.
     /// 
     /// Returns a tuple of (width, height, x1, y1). Height is 1 line short.
-    pub fn text_dimensions<Target: sdl2::render::RenderTarget>(&self, text: &str, line_height: i32, _font_size: i32, x0: i32, y0: i32, max_width: Option<i32>, break_on: &HashSet<char>, draw_on: Option<&mut sdl2::render::Canvas<Target>>) -> (i32, i32, i32, i32) {
+    pub fn render_text<Target: sdl2::render::RenderTarget>(&self, text: &str, line_height: i32, _font_size: i32, x0: i32, y0: i32, max_width: Option<i32>, break_on: &HashSet<char>, draw_on: Option<&mut sdl2::render::Canvas<Target>>) -> (i32, i32, i32, i32) {
         let mut x = x0;
         let mut y = y0;
         let mut break_x = 0;

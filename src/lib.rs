@@ -26,7 +26,7 @@ mod tests {
         let html_filename = "res/html/demo.html";
         let html = std::fs::read_to_string(html_filename).unwrap();
         let mut all_windows = vec![];
-        let mut window: Window = Window::new(ctx.clone(), &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename));
+        let mut window: Window = Window::new(ctx.clone(), &WindowCreationOptions { title: "Test".to_string(), width: 800, height: 600 }, html.as_str(), Some(html_filename)).unwrap();
         window.pointer_up_events.add_listener(|event, window| {
             let node = window.get_node_at(event.0.data.x, event.0.data.y);
             match node {

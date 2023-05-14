@@ -533,10 +533,10 @@ impl ComputedStyle {
     /// Applies the given style to this computed style, if it has a higher specificity.
     /// 
     /// ```
-    /// use yargl::css::{Style, parse_css, Selector, ComputedStyle, Unit};
+    /// use yargl::css::{Style, parse_css, Selector, ComputedStyle, Unit, Specificity};
     /// use std::vec::Vec;
     /// use std::collections::HashMap;
-    /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; } div.a#d { width: 200px; }");
+    /// let mut styles = parse_css("div.a, #b, .c { width: 100px; font-size: 20px; height: 100%; color: #ff0000; } div.a#d { width: 200px; }").unwrap();
     /// let mut style1 = styles.remove(0);
     /// let mut style2 = styles.remove(0);
     /// let mut computed_style = ComputedStyle::new(Selector { tag_name: Some("div".to_string()), class_list: vec!["a".to_string()], id: Some("d".to_string()) });
