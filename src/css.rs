@@ -210,13 +210,13 @@ impl FromStr for FlexDirection {
 /// 
 /// ```
 /// use yargl::css::Specificity;
-/// let a = Specificity { a: 1, b: 0, c: 1 };
-/// let b = Specificity { a: 0, b: 2, c: 0 };
+/// let a = Specificity { num_id: 1, num_class: 0, num_tag: 1 };
+/// let b = Specificity { num_id: 0, num_class: 2, num_tag: 0 };
 /// assert!(a > b);
-/// let c = Specificity { a: 0, b: 2, c: 1 };
+/// let c = Specificity { num_id: 0, num_class: 2, num_tag: 1 };
 /// assert!(a > c);
 /// assert!(c > b);
-/// let d = Specificity { a: 0, b: 2, c: 1 };
+/// let d = Specificity { num_id: 0, num_class: 2, num_tag: 1 };
 /// assert_eq!(c, d);
 /// assert!(b + d > c);
 /// ```
