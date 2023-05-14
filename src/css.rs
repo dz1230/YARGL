@@ -285,6 +285,7 @@ pub struct Selector {
 }
 
 impl Selector {
+    /// Creates a new selector with the given tag name, class list, and id.
     pub fn new(tag_name: Option<String>, class_list: Vec<String>, id: Option<String>) -> Selector {
         Selector {
             tag_name,
@@ -339,25 +340,6 @@ impl Selector {
         }
         specificity
     }
-
-    /// True if this selector matches the given tag name, class list, and id. 
-    /// The given class list matches if it is a superset of the selector's class list.
-    /// Tag and id only have to match if both are Some.
-    /// The node value is currently unused, but will be neccessary for matching pseudo-classes.
-    pub fn matches(&self, tag_name: &Option<String>, class_list: &Vec<String>, id: &Option<String>, _node: Option<&tl::Node>) -> bool {
-        if self.tag_name.is_some() && tag_name.is_some() && self.tag_name.as_ref().unwrap() != tag_name.as_ref().unwrap() {
-            return false;
-        }
-        if self.id.is_some() && id.is_some() && self.id.as_ref().unwrap() != id.as_ref().unwrap() {
-            return false;
-        }
-        for class in &self.class_list {
-            if !class_list.contains(class) {
-                return false;
-            }
-        }
-        true
-    }
 }
 
 impl ToString for Selector {
@@ -380,16 +362,16 @@ impl ToString for Selector {
     /// ```
     fn to_string(&self) -> String {
         let mut selector = String::new();
-        if self.tag_name.is_some() {
-            selector.push_str(self.tag_name.as_ref().unwrap());
+        if let Some(tag_name) = &self.tag_name {
+            selector.push_str(tag_name);
         }
         for class in &self.class_list {
             selector.push('.');
             selector.push_str(class);
         }
-        if self.id.is_some() {
+        if let Some(id) = &self.id {
             selector.push('#');
-            selector.push_str(self.id.as_ref().unwrap());
+            selector.push_str(id);
         }
         selector
     }
@@ -480,19 +462,18 @@ impl Style {
     /// assert_eq!(color.unwrap().sdl_color, sdl2::pixels::Color::RGB(255, 0, 0));
     /// ```
     pub fn get_value<T>(&self, property: &str) -> (Option<T>, Option<Unit>) where T: std::str::FromStr {
-        let value = self.properties.get(property);
-        if value.is_none() {
-            return (None, None);
-        }
-        let value = value.unwrap();
-        for unit in Unit::iter() {
-            let unit_str = unit.to_string();
-            if value.ends_with(unit_str.as_str()) {
-                let val = value[0..value.len() - unit_str.len()].parse::<T>().ok();
-                return (val, Some(unit));
+        if let Some(value) = self.properties.get(property) {
+            for unit in Unit::iter() {
+                let unit_str = unit.to_string();
+                if value.ends_with(unit_str.as_str()) {
+                    let val = value[0..value.len() - unit_str.len()].parse::<T>().ok();
+                    return (val, Some(unit));
+                }
             }
+            (value.parse::<T>().ok(), None)
+        } else {
+            (None, None)
         }
-        return (value.parse::<T>().ok(), None);
     }
     /// Sets the value of the given property, optionally with a unit.
     pub fn set_value<T>(&mut self, property: &str, value: &T, unit: Option<Unit>) where T: std::string::ToString {
@@ -589,18 +570,18 @@ impl ComputedStyle {
 }
 
 impl ToString for ComputedStyle {
+    /// Formats this computed style rule as a CSS rule.
     fn to_string(&self) -> String {
         let mut result = String::new();
         result.push_str(&self.selector.to_string());
         result.push_str(" {\n");
         for (property, selected_style) in self.properties.iter() {
             let (value, unit) = selected_style.get_value::<String>(property);
-            let str_value = match unit {
+            if let Some(str_value) = match unit {
                 Some(unit) => value.map(|v| format!("{}{}", v, unit.to_string())),
                 None => value
-            };
-            if str_value.is_some() {
-                result.push_str(&format!("\t{}: {};\n", property, str_value.unwrap()));
+            } {
+                result.push_str(&format!("\t{}: {};\n", property, str_value));
             }
         }
         result.push_str("}");
@@ -612,8 +593,9 @@ impl ToString for ComputedStyle {
 /// 
 /// - css [&str]: CSS-formatted string
 /// 
-/// Supports: Comments, Basic selectors (tag, multiple classes, id), Multiple selectors for one style (comma-separated), Units, Hex colors (no shorthand)
+/// Returns: A vector of reference-counted style rules.
 /// 
+/// Supports: Comments, Basic selectors (tag, multiple classes, id), Multiple selectors for one style (comma-separated), Units, Hex colors (no shorthand)
 // TODO: Pseudo-classes, Pseudo-elements, Attribute selectors, Combinators, Media queries, Keyframes, Animations, Transitions, Variables, Functions, Calc, etc.
 pub fn parse_css(css: &str) -> Result<Vec<Rc<Style>>, CssParseError> {
     let mut parser_input = cssparser::ParserInput::new(css);
