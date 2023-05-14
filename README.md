@@ -10,12 +10,16 @@ Usage: See [tests/staticwindow.rs](tests/staticwindow.rs)
 
 Currently suppports:
 
--[x] Creation of fixed-size windows
--[x] Parsing static html documents
--[x] Parsing css rules from html documents
--[x] Rendering static html documents onto a window*
--[x] Receiving input events and the html element that they apply to
--[x] TrueType and OpenType fonts
+- [x] Creation of fixed-size windows
+- [x] Parsing static html documents
+- [x] Parsing css rules from html documents
+- [x] Rendering static html documents onto a window*
+- [x] Receiving input events and the html element that they apply to
+- [x] TrueType and OpenType fonts
+
+Not supported:
+
+- [ ] Everything else
 
 <p>
 * Only the following css properties are supported:
