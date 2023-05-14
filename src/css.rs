@@ -222,21 +222,21 @@ impl FromStr for FlexDirection {
 /// ```
 #[derive(Clone, PartialEq, Debug)]
 pub struct Specificity {
-    pub a: u32,
-    pub b: u32,
-    pub c: u32,
+    pub num_id: u32,
+    pub num_class: u32,
+    pub num_tag: u32,
 }
 
 impl PartialOrd for Specificity {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        if self.a == other.a {
-            if self.b == other.b {
-                self.c.partial_cmp(&other.c)
+        if self.num_id == other.num_id {
+            if self.num_class == other.num_class {
+                self.num_tag.partial_cmp(&other.num_tag)
             } else {
-                self.b.partial_cmp(&other.b)
+                self.num_class.partial_cmp(&other.num_class)
             }
         } else {
-            self.a.partial_cmp(&other.a)
+            self.num_id.partial_cmp(&other.num_id)
         }
     }
 }
@@ -246,33 +246,33 @@ impl std::ops::Add for Specificity {
 
     fn add(self, rhs: Self) -> Self::Output {
         Specificity {
-            a: self.a + rhs.a,
-            b: self.b + rhs.b,
-            c: self.c + rhs.c,
+            num_id: self.num_id + rhs.num_id,
+            num_class: self.num_class + rhs.num_class,
+            num_tag: self.num_tag + rhs.num_tag,
         }
     }
 }
 
 impl Specificity {
-    pub fn new(a: u32, b: u32, c: u32) -> Specificity {
+    pub fn new(num_id: u32, num_class: u32, num_tag: u32) -> Specificity {
         Specificity {
-            a,
-            b,
-            c,
+            num_id,
+            num_class,
+            num_tag,
         }
     }
 
     pub fn add_id(&mut self) {
-        self.a += 1;
+        self.num_id += 1;
     }
     pub fn add_class(&mut self) {
-        self.b += 1;
+        self.num_class += 1;
     }
     pub fn add_classes(&mut self, n: u32) {
-        self.b += n;
+        self.num_class += n;
     }
     pub fn add_tag(&mut self) {
-        self.c += 1;
+        self.num_tag += 1;
     }
 }
 
