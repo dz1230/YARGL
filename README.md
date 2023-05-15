@@ -8,6 +8,8 @@ Internally it uses sdl
 
 Usage: See [tests/staticwindow.rs](tests/staticwindow.rs)
 
+Note: Using the library requires cmake to be installed on the system
+
 Currently suppports:
 
 - [x] Creation of fixed-size windows
